@@ -126,6 +126,59 @@ def resample_weekly(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def find_swing_levels(
+    df: pd.DataFrame,
+    price: float | None,
+    left: int = 5,
+    right: int = 5,
+    min_gap_pct: float = 0.005,
+) -> tuple[list[float | None], list[float | None]]:
+    """
+    Finds up to 5 nearest Swing Lows (supports < price) and 5 nearest Swing Highs (resistances > price),
+    matching TradingView's ta.pivotlow(left, right) and ta.pivothigh(left, right).
+    Index 0 = closest to current price, Index 4 = furthest.
+    """
+    if df is None or df.empty or price is None or len(df) < (left + right + 1):
+        return [None] * 5, [None] * 5
+
+    highs = df["High"].to_numpy(dtype=float)
+    lows = df["Low"].to_numpy(dtype=float)
+    n = len(df)
+
+    raw_supports = []
+    raw_resistances = []
+
+    # Scan backwards from newest confirmed pivot so most recent levels take priority when clustering
+    for i in range(n - right - 1, left - 1, -1):
+        if not np.isnan(highs[i]):
+            window_high = highs[i - left : i + right + 1]
+            if highs[i] == np.nanmax(window_high) and highs[i] > price:
+                raw_resistances.append(float(highs[i]))
+
+        if not np.isnan(lows[i]):
+            window_low = lows[i - left : i + right + 1]
+            if lows[i] == np.nanmin(window_low) and lows[i] < price:
+                raw_supports.append(float(lows[i]))
+
+    def cluster_levels(levels: list[float]) -> list[float]:
+        clustered = []
+        for lvl in levels:
+            if all(
+                abs(lvl - existing) / existing >= min_gap_pct
+                for existing in clustered
+                if existing > 0
+            ):
+                clustered.append(lvl)
+        return clustered
+
+    supports = sorted(cluster_levels(raw_supports), reverse=True)[:5]
+    resistances = sorted(cluster_levels(raw_resistances))[:5]
+
+    supports_padded = [clean_num(x, 2) for x in supports] + [None] * (5 - len(supports))
+    resistances_padded = [clean_num(x, 2) for x in resistances] + [None] * (5 - len(resistances))
+    return supports_padded, resistances_padded
+
+
 def compute_wilder_rsi(close: pd.Series, period: int = 14):
     if len(close) < period + 1:
         return None
@@ -140,7 +193,7 @@ def compute_wilder_rsi(close: pd.Series, period: int = 14):
 
 
 def compute_wilder_atr(df: pd.DataFrame, period: int = 14):
-    if df is None or len(df) < period + 1:
+    if len(df) < period + 1:
         return None
     high = df["High"]
     low = df["Low"]
@@ -151,104 +204,6 @@ def compute_wilder_atr(df: pd.DataFrame, period: int = 14):
     ).max(axis=1)
     atr = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
     return clean_num(atr.iloc[-1], 4)
-
-
-def find_sr_zones(
-    df: pd.DataFrame,
-    price: float | None,
-    atr: float | None,
-    left: int = 8,
-    right: int = 8,
-    atr_mult: float = 0.5,
-    fallback_pct: float = 0.008,
-    max_bars: int | None = None,
-) -> tuple[list[float | None], list[float | None]]:
-    """
-    Identifies multi-touch Support & Resistance zones with:
-    - ATR-normalized clustering (adapts zone width to each stock's volatility)
-    - Role Reversal (broken resistance becomes support and vice versa)
-    - Strength scoring (touch count + volume spike confirmation + recency)
-    Returns up to 5 nearest supports (< price) and 5 nearest resistances (> price).
-    """
-    if df is None or df.empty or price is None or price <= 0:
-        return [None] * 5, [None] * 5
-
-    work_df = df.iloc[-max_bars:].copy() if (max_bars and len(df) > max_bars) else df.copy()
-    n = len(work_df)
-    if n < (left + right + 1):
-        return [None] * 5, [None] * 5
-
-    highs = work_df["High"].to_numpy(dtype=float)
-    lows = work_df["Low"].to_numpy(dtype=float)
-    vols = work_df["Volume"].to_numpy(dtype=float) if "Volume" in work_df.columns else np.zeros(n)
-    vol_ma = pd.Series(vols).rolling(20, min_periods=1).mean().to_numpy(dtype=float)
-
-    raw_pivots = []
-    for i in range(left, n - right):
-        recency = i / max(n - 1, 1)  # 0.0 (oldest) -> 1.0 (newest)
-        high_vol = bool(vol_ma[i] > 0 and vols[i] >= 1.2 * vol_ma[i])
-
-        if not np.isnan(highs[i]):
-            if highs[i] == np.nanmax(highs[i - left : i + right + 1]):
-                raw_pivots.append(
-                    {"level": float(highs[i]), "recency": recency, "high_vol": high_vol}
-                )
-
-        if not np.isnan(lows[i]):
-            if lows[i] == np.nanmin(lows[i - left : i + right + 1]):
-                raw_pivots.append(
-                    {"level": float(lows[i]), "recency": recency, "high_vol": high_vol}
-                )
-
-    if not raw_pivots:
-        return [None] * 5, [None] * 5
-
-    # Sort all swing pivots by price to form deterministic ATR-sized zones
-    raw_pivots.sort(key=lambda x: x["level"])
-    tolerance = (atr * atr_mult) if (atr is not None and atr > 0) else (price * fallback_pct)
-
-    clusters: list[list[dict]] = []
-    for p in raw_pivots:
-        if not clusters:
-            clusters.append([p])
-            continue
-        curr_mean = sum(item["level"] for item in clusters[-1]) / len(clusters[-1])
-        if abs(p["level"] - curr_mean) <= tolerance:
-            clusters[-1].append(p)
-        else:
-            clusters.append([p])
-
-    zones = []
-    for cl in clusters:
-        touches = len(cl)
-        center_price = sum(item["level"] for item in cl) / touches
-        vol_hits = sum(1 for item in cl if item["high_vol"])
-        max_recency = max(item["recency"] for item in cl)
-        strength = (touches * 2.0) + (vol_hits * 0.75) + max_recency
-        zones.append(
-            {
-                "price": center_price,
-                "touches": touches,
-                "strength": strength,
-            }
-        )
-
-    # Role Reversal classification relative to current price (with 0.3% buffer)
-    sup_candidates = [z for z in zones if z["price"] < price * 0.997]
-    res_candidates = [z for z in zones if z["price"] > price * 1.003]
-
-    def select_top_nearest(candidates: list[dict], descending: bool) -> list[float | None]:
-        if not candidates:
-            return [None] * 5
-        # Prioritize multi-touch zones first, then fill with strongest single-touch swings
-        multi = sorted([z for z in candidates if z["touches"] >= 2], key=lambda x: x["strength"], reverse=True)
-        single = sorted([z for z in candidates if z["touches"] == 1], key=lambda x: x["strength"], reverse=True)
-        pool = (multi[:8] + single)[:8]
-        ordered = sorted(pool, key=lambda x: x["price"], reverse=descending)[:5]
-        vals = [clean_num(z["price"], 2) for z in ordered]
-        return vals + [None] * (5 - len(vals))
-
-    return select_top_nearest(sup_candidates, descending=True), select_top_nearest(res_candidates, descending=False)
 
 
 def pct_return_bars(close: pd.Series, lookback: int):
@@ -299,7 +254,7 @@ def main():
     # 1. Fetch primary EOD snapshot from TradingView
     tv_data = fetch_tradingview_data(symbols)
 
-    # 2. Fetch 3 years of daily OHLCV bars
+    # 2. Fetch 3 years of daily OHLCV bars (supports multi-period returns + Daily & Weekly S/R pivots)
     yf_map = {
         sym: sym.split(":")[-1].strip().replace(".", "-")
         for sym in symbols
@@ -339,7 +294,7 @@ def main():
         if change_today_pct is None and not close.empty:
             change_today_pct = daily_change_at_offset(close, 0)
 
-        # Start of the week (WTD) & YTD
+        # Start of the week (WTD) & YTD from closed daily bars
         start_of_week_pct = None
         ytd_pct = clean_num(tv.get("Perf.YTD"), 2)
         if not df.empty and price is not None:
@@ -413,29 +368,10 @@ def main():
             else None
         )
 
-        # Upgraded Daily (D) & Weekly (W) multi-touch ATR Support & Resistance zones
-        d_sup, d_res = find_sr_zones(
-            df,
-            price,
-            atr_val,
-            left=8,
-            right=8,
-            atr_mult=0.5,
-            fallback_pct=0.008,
-            max_bars=375,
-        )
+        # Daily (D) & Weekly (W) Support and Resistance levels (5 each)
+        d_sup, d_res = find_swing_levels(df, price, left=5, right=5, min_gap_pct=0.005)
         weekly_df = resample_weekly(df)
-        weekly_atr = compute_wilder_atr(weekly_df, 14)
-        w_sup, w_res = find_sr_zones(
-            weekly_df,
-            price,
-            weekly_atr,
-            left=4,
-            right=4,
-            atr_mult=0.6,
-            fallback_pct=0.015,
-            max_bars=None,
-        )
+        w_sup, w_res = find_swing_levels(weekly_df, price, left=3, right=3, min_gap_pct=0.01)
 
         snapshot_rows.append(
             {
