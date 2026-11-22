@@ -1,0 +1,35 @@
+name: Daily EOD Stock Sync
+
+on:
+  schedule:
+    # 03:00 UTC = 05:00 Israel Time (Tue-Sat, skipping Sun & Mon mornings)
+    - cron: '0 3 * * 2-6'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Number of stocks to sync (0 = all active stocks)'
+        required: false
+        default: '5'
+        type: string
+
+jobs:
+  sync-eod:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run EOD data pipeline
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          STOCK_LIMIT: ${{ github.event.inputs.limit || '0' }}
+        run: python fetch_eod.py
