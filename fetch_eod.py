@@ -7,8 +7,8 @@ import pandas as pd
 import yfinance as yf
 from supabase import create_client, Client
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
+SUPABASE_URL = os.environ["SUPABASE_URL"].strip()
+SUPABASE_KEY = os.environ["SUPABASE_KEY"].strip()
 LIMIT = int(os.environ.get("STOCK_LIMIT", "0"))
 
 
@@ -56,7 +56,6 @@ def fetch_tradingview_data(symbols: list[str]) -> dict[str, dict]:
         "RSI",
         "ATR",
     ]
-    # Map clean ticker name -> original symbol in DB (handles e.g. BATS:DRAM -> DRAM)
     clean_to_orig = {}
     for sym in symbols:
         base = sym.split(":")[-1].strip().upper()
@@ -104,7 +103,80 @@ def extract_ticker_df(raw_df: pd.DataFrame, yf_sym: str, single_mode: bool) -> p
             return pd.DataFrame()
         df = raw_df[yf_sym].copy()
     df = df.dropna(subset=["Close"])
+    if not df.empty and not isinstance(df.index, pd.DatetimeIndex):
+        df.index = pd.to_datetime(df.index)
     return df
+
+
+def resample_weekly(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    return (
+        df.resample("W-FRI")
+        .agg(
+            {
+                "Open": "first",
+                "High": "max",
+                "Low": "min",
+                "Close": "last",
+                "Volume": "sum",
+            }
+        )
+        .dropna(subset=["Close"])
+    )
+
+
+def find_swing_levels(
+    df: pd.DataFrame,
+    price: float | None,
+    left: int = 5,
+    right: int = 5,
+    min_gap_pct: float = 0.005,
+) -> tuple[list[float | None], list[float | None]]:
+    """
+    Finds up to 5 nearest Swing Lows (supports < price) and 5 nearest Swing Highs (resistances > price),
+    matching TradingView's ta.pivotlow(left, right) and ta.pivothigh(left, right).
+    Index 0 = closest to current price, Index 4 = furthest.
+    """
+    if df is None or df.empty or price is None or len(df) < (left + right + 1):
+        return [None] * 5, [None] * 5
+
+    highs = df["High"].to_numpy(dtype=float)
+    lows = df["Low"].to_numpy(dtype=float)
+    n = len(df)
+
+    raw_supports = []
+    raw_resistances = []
+
+    # Scan backwards from newest confirmed pivot so most recent levels take priority when clustering
+    for i in range(n - right - 1, left - 1, -1):
+        if not np.isnan(highs[i]):
+            window_high = highs[i - left : i + right + 1]
+            if highs[i] == np.nanmax(window_high) and highs[i] > price:
+                raw_resistances.append(float(highs[i]))
+
+        if not np.isnan(lows[i]):
+            window_low = lows[i - left : i + right + 1]
+            if lows[i] == np.nanmin(window_low) and lows[i] < price:
+                raw_supports.append(float(lows[i]))
+
+    def cluster_levels(levels: list[float]) -> list[float]:
+        clustered = []
+        for lvl in levels:
+            if all(
+                abs(lvl - existing) / existing >= min_gap_pct
+                for existing in clustered
+                if existing > 0
+            ):
+                clustered.append(lvl)
+        return clustered
+
+    supports = sorted(cluster_levels(raw_supports), reverse=True)[:5]
+    resistances = sorted(cluster_levels(raw_resistances))[:5]
+
+    supports_padded = [clean_num(x, 2) for x in supports] + [None] * (5 - len(supports))
+    resistances_padded = [clean_num(x, 2) for x in resistances] + [None] * (5 - len(resistances))
+    return supports_padded, resistances_padded
 
 
 def compute_wilder_rsi(close: pd.Series, period: int = 14):
@@ -145,7 +217,6 @@ def pct_return_bars(close: pd.Series, lookback: int):
 
 
 def daily_change_at_offset(close: pd.Series, offset: int):
-    """offset=0 -> last closed day vs day before; offset=1 -> yesterday vs 2 days ago."""
     if len(close) <= offset + 1:
         return None
     curr = float(close.iloc[-1 - offset])
@@ -183,7 +254,7 @@ def main():
     # 1. Fetch primary EOD snapshot from TradingView
     tv_data = fetch_tradingview_data(symbols)
 
-    # 2. Fetch historical daily OHLCV bars for custom offsets & multi-period calculations
+    # 2. Fetch 3 years of daily OHLCV bars (supports multi-period returns + Daily & Weekly S/R pivots)
     yf_map = {
         sym: sym.split(":")[-1].strip().replace(".", "-")
         for sym in symbols
@@ -191,7 +262,7 @@ def main():
     unique_yf_tickers = list(set(yf_map.values()))
     raw_hist = yf.download(
         tickers=unique_yf_tickers,
-        period="400d",
+        period="3y",
         interval="1d",
         auto_adjust=False,
         group_by="ticker",
@@ -247,7 +318,7 @@ def main():
                     if py_close > 0:
                         ytd_pct = clean_num(((price / py_close) - 1.0) * 100.0, 2)
 
-        # Multi-period returns (TV first, fallback to exact trading-day bars)
+        # Multi-period returns
         weekly = clean_num(tv.get("Perf.W"), 2) or pct_return_bars(close, 5)
         two_weeks = pct_return_bars(close, 10)
         three_weeks = pct_return_bars(close, 15)
@@ -266,7 +337,7 @@ def main():
         vol_3d = clean_int(vol.iloc[-4]) if len(vol) >= 4 else None
         vol_4d = clean_int(vol.iloc[-5]) if len(vol) >= 5 else None
 
-        # Moving averages (TV for 20/50/200 with bar fallback; bars for 150)
+        # Moving averages
         def get_sma(period: int, tv_key: str | None):
             val = clean_num(tv.get(tv_key), 4) if tv_key else None
             if val is None and len(close) >= period:
@@ -296,6 +367,11 @@ def main():
             if (atr_val is not None and price is not None and price > 0)
             else None
         )
+
+        # Daily (D) & Weekly (W) Support and Resistance levels (5 each)
+        d_sup, d_res = find_swing_levels(df, price, left=5, right=5, min_gap_pct=0.005)
+        weekly_df = resample_weekly(df)
+        w_sup, w_res = find_swing_levels(weekly_df, price, left=3, right=3, min_gap_pct=0.01)
 
         snapshot_rows.append(
             {
@@ -341,6 +417,26 @@ def main():
                 "rsi": rsi_val,
                 "atr_14": atr_val,
                 "atr_pct": atr_pct,
+                "d_s_1": d_sup[0],
+                "d_s_2": d_sup[1],
+                "d_s_3": d_sup[2],
+                "d_s_4": d_sup[3],
+                "d_s_5": d_sup[4],
+                "d_r_1": d_res[0],
+                "d_r_2": d_res[1],
+                "d_r_3": d_res[2],
+                "d_r_4": d_res[3],
+                "d_r_5": d_res[4],
+                "w_s_1": w_sup[0],
+                "w_s_2": w_sup[1],
+                "w_s_3": w_sup[2],
+                "w_s_4": w_sup[3],
+                "w_s_5": w_sup[4],
+                "w_r_1": w_res[0],
+                "w_r_2": w_res[1],
+                "w_r_3": w_res[2],
+                "w_r_4": w_res[3],
+                "w_r_5": w_res[4],
                 "updated_at": now_iso,
             }
         )
