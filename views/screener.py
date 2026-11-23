@@ -1,6 +1,5 @@
-# === [SEC-01: IMPORTS & PAGE HEADER] ===
+# === [SEC-01: IMPORTS] ===
 import html
-from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
 from db import (
@@ -14,9 +13,7 @@ from ui_theme import render_logo_html, format_pct_color
 
 # === [SEC-02: TOP CONTROL BAR (LIVE MODE & NEW STOCKS SYNC)] ===
 def render_top_controls(all_symbols: list[str]) -> tuple[bool, int]:
-    st.markdown("## סורק מניות ונתוני שוק")
-
-    c_live, c_freq, c_btn_now, c_new_box = st.columns([1.3, 1.3, 1.2, 2.6])
+    c_live, c_freq, c_btn_now, c_new_box = st.columns([1.4, 1.3, 1.3, 2.2])
 
     with c_live:
         live_on = st.toggle("מצב מסחר חי (LIVE)", value=False, key="screener_live_toggle")
@@ -39,13 +36,13 @@ def render_top_controls(all_symbols: list[str]) -> tuple[bool, int]:
         run_every_sec = freq_map[freq_label]
 
     with c_btn_now:
-        if st.button("🔄 רענון מחירים כעת", use_container_width=True):
+        if st.button("רענון מחירים כעת", use_container_width=True):
             with st.spinner("מושך שערים חיים..."):
                 updated = refresh_live_prices_tv(all_symbols)
-                st.toast(f"עודכנו שערים חיים עבור {updated} מניות", icon="✅")
+                st.toast(f"עודכנו שערים חיים עבור {updated} מניות")
 
     with c_new_box:
-        with st.popover("➕ הוספה / סנכרון מניות חדשות", use_container_width=True):
+        with st.popover("הוספה / סנכרון מניות חדשות", use_container_width=True):
             st.markdown("**הוספת טיקר חדש או השלמת מניות שנוספו אחרי 05:00**")
             new_ticker_input = st.text_input(
                 "הזן טיקר (לדוגמה: PLTR)",
@@ -54,7 +51,7 @@ def render_top_controls(all_symbols: list[str]) -> tuple[bool, int]:
             )
             if st.button("הוסף וסנכרן טיקר זה", type="primary", use_container_width=True):
                 if new_ticker_input.strip():
-                    with st.spinner(f"מבצע סנכרון מלא (פרופיל, AI, טכני ורמות) עבור {new_ticker_input.upper()}..."):
+                    with st.spinner(f"מבצע סנכרון מלא עבור {new_ticker_input.upper()}..."):
                         ok, msg = sync_single_new_stock(new_ticker_input)
                         if ok:
                             st.success(msg)
@@ -65,8 +62,8 @@ def render_top_controls(all_symbols: list[str]) -> tuple[bool, int]:
             st.divider()
             pending_syms = find_pending_new_symbols()
             if pending_syms:
-                st.info(f"זוהו {len(pending_syms)} מניות חדשות ב-Watchlist הממתינות להשלמה: {', '.join(pending_syms[:8])}")
-                if st.button("⚡ השלם נתונים לכל המניות החדשות", use_container_width=True):
+                st.info(f"זוהו {len(pending_syms)} מניות חדשות הממתינות להשלמה: {', '.join(pending_syms[:8])}")
+                if st.button("השלם נתונים לכל המניות החדשות", use_container_width=True):
                     prog = st.progress(0)
                     for idx, sym in enumerate(pending_syms, start=1):
                         sync_single_new_stock(sym)
@@ -74,86 +71,14 @@ def render_top_controls(all_symbols: list[str]) -> tuple[bool, int]:
                     st.success("כל המניות החדשות הושלמו בהצלחה!")
                     st.rerun()
             else:
-                st.caption("כל המניות ב-Watchlist מסונכרנות ומעודכנות.")
+                st.caption("כל המניות ברשימת המעקב מסונכרנות ומעודכנות.")
 
     return live_on, run_every_sec
 
 
-# === [SEC-03: KPI SUMMARY BAR] ===
-def render_kpi_bar(df_filtered: pd.DataFrame, total_count: int) -> None:
-    count_shown = len(df_filtered)
-    above_200 = (
-        round((df_filtered["ma_200_status"] == "Above").mean() * 100, 1)
-        if count_shown > 0 and "ma_200_status" in df_filtered.columns
-        else 0.0
-    )
-    green_today = (
-        round((df_filtered["change_today_pct"] > 0).mean() * 100, 1)
-        if count_shown > 0 and "change_today_pct" in df_filtered.columns
-        else 0.0
-    )
-
-    upcoming_7d = 0
-    if count_shown > 0 and "next_earnings_date" in df_filtered.columns:
-        today_dt = datetime.now(timezone.utc).date()
-        for dt_val in df_filtered["next_earnings_date"].dropna():
-            try:
-                d_parsed = pd.to_datetime(dt_val).date()
-                if 0 <= (d_parsed - today_dt).days <= 7:
-                    upcoming_7d += 1
-            except Exception:
-                pass
-
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        st.markdown(
-            f"""
-            <div class="kpi-card">
-                <div class="kpi-title">מניות מוצגות</div>
-                <div class="kpi-value ltr-right">{count_shown} <span style="font-size:0.95rem;color:#64748B;">/ {total_count}</span></div>
-                <div class="kpi-sub">מתוך רשימת המעקב הפעילה</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with k2:
-        st.markdown(
-            f"""
-            <div class="kpi-card">
-                <div class="kpi-title">מעל ממוצע 200 (MA200)</div>
-                <div class="kpi-value ltr-right" style="color:#10B981;">{above_200}%</div>
-                <div class="kpi-sub">רוחב שוק במגמה ראשית</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with k3:
-        st.markdown(
-            f"""
-            <div class="kpi-card">
-                <div class="kpi-title">מניות ירוקות היום</div>
-                <div class="kpi-value ltr-right" style="color:#60A5FA;">{green_today}%</div>
-                <div class="kpi-sub">שינוי יומי חיובי</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with k4:
-        st.markdown(
-            f"""
-            <div class="kpi-card">
-                <div class="kpi-title">דוחות ב-7 הימים הקרובים</div>
-                <div class="kpi-value ltr-right" style="color:#F59E0B;">{upcoming_7d}</div>
-                <div class="kpi-sub">התראת תנודתיות דוחות</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-
-# === [SEC-04: FILTER & SORT ENGINE] ===
-def render_filters_and_sort(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
-    with st.expander("🔎 סינון ומיון מתקדם", expanded=True):
+# === [SEC-03: FILTER & SORT ENGINE] ===
+def render_filters_and_sort(df: pd.DataFrame) -> pd.DataFrame:
+    with st.expander("סינון ומיון מתקדם", expanded=True):
         f1, f2, f3, f4 = st.columns([1.6, 1.1, 1.3, 1.3])
 
         with f1:
@@ -176,7 +101,7 @@ def render_filters_and_sort(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
             sub_inds = ["הכל"] + sorted(sub_df["sub_industry"].dropna().unique().tolist()) if "sub_industry" in sub_df.columns else ["הכל"]
             sel_sub = st.selectbox("תת-תעשייה", sub_inds, key="flt_sub_ind")
 
-        s1, s2, s3, s4 = st.columns([1.2, 1.2, 1.3, 1.6])
+        s1, s2, s3 = st.columns([1.4, 1.2, 1.4])
 
         with s1:
             ma_filter = st.selectbox(
@@ -200,14 +125,6 @@ def render_filters_and_sort(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
                     "קרבה לדוחות כספיים",
                 ],
                 key="flt_sort",
-            )
-
-        with s4:
-            view_mode = st.radio(
-                "תצוגה",
-                ["כרטיסיות", "טבלה מלאה"],
-                horizontal=True,
-                key="screener_view_mode",
             )
 
     out = df.copy()
@@ -244,7 +161,6 @@ def render_filters_and_sort(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     if min_rvol > 0 and "rel_vol_5d" in out.columns:
         out = out[out["rel_vol_5d"].fillna(0) >= min_rvol]
 
-    # Sorting
     if sort_choice == "% שינוי יומי (גבוה לנמוך)":
         out = out.sort_values("change_today_pct", ascending=False, na_position="last")
     elif sort_choice == "% שינוי יומי (נמוך לגבוה)":
@@ -258,10 +174,10 @@ def render_filters_and_sort(df: pd.DataFrame) -> tuple[pd.DataFrame, str]:
     else:
         out = out.sort_values("symbol", ascending=True)
 
-    return out.reset_index(drop=True), view_mode
+    return out.reset_index(drop=True)
 
 
-# === [SEC-05: CARD GRID & FULL TABLE RENDERERS] ===
+# === [SEC-04: STOCK RECTANGLE CARDS GRID] ===
 def render_cards_grid(df_filtered: pd.DataFrame) -> None:
     if df_filtered.empty:
         st.warning("לא נמצאו מניות התואמות לסינון שנבחר.")
@@ -296,7 +212,9 @@ def render_cards_grid(df_filtered: pd.DataFrame) -> None:
 
             price_val = r.get("display_price")
             price_str = f"${price_val:,.2f}" if pd.notna(price_val) else "--"
-            pct_str, pct_color = format_pct_color(r.get("change_today_pct") if pd.notna(r.get("change_today_pct")) else None)
+            pct_str, pct_color = format_pct_color(
+                r.get("change_today_pct") if pd.notna(r.get("change_today_pct")) else None
+            )
 
             with cols[col_idx]:
                 st.markdown(
@@ -328,40 +246,12 @@ def render_cards_grid(df_filtered: pd.DataFrame) -> None:
                     """,
                     unsafe_allow_html=True,
                 )
-                if st.button("🔍 ניתוח עומק", key=f"open_dd_{sym}", use_container_width=True):
+                if st.button("ניתוח עומק", key=f"open_dd_{sym}", use_container_width=True):
                     st.session_state["selected_symbol"] = sym
                     st.switch_page("views/deep_dive.py")
 
 
-def render_full_table(df_filtered: pd.DataFrame) -> None:
-    if df_filtered.empty:
-        st.warning("לא נמצאו מניות התואמות לסינון שנבחר.")
-        return
-
-    col_group = st.radio(
-        "קבוצת עמודות",
-        ["מבט על", "תשואות תקופתיות", "נפחים ונפח יחסי", "רמות תמיכה והתנגדות"],
-        horizontal=True,
-        key="tbl_col_group",
-    )
-
-    base_cols = ["symbol", "company_name", "exchange", "sector", "sub_industry", "display_price", "change_today_pct"]
-    if col_group == "מבט על":
-        extra = ["ma_20_status", "ma_50_status", "ma_150_status", "ma_200_status", "rsi", "atr_pct", "rel_vol_5d", "next_earnings_date"]
-    elif col_group == "תשואות תקופתיות":
-        extra = ["change_1d", "change_2d", "start_of_the_week", "weekly", "two_weeks", "monthly", "three_months", "six_months", "ytd", "one_year"]
-    elif col_group == "נפחים ונפח יחסי":
-        extra = ["daily_vol", "vol_1d", "rel_vol_5d", "rel_vol_10d", "rel_vol_15d", "rel_vol_20d", "rel_vol_30d"]
-    else:
-        extra = ["d_s_2", "d_s_1", "d_r_1", "d_r_2", "w_s_1", "w_r_1"]
-
-    chosen_cols = [c for c in (base_cols + extra) if c in df_filtered.columns]
-    view_df = df_filtered[chosen_cols].copy()
-
-    st.dataframe(view_df, use_container_width=True, hide_index=True, height=620)
-
-
-# === [SEC-06: MAIN PAGE ORCHESTRATION WITH LIVE FRAGMENT] ===
+# === [SEC-05: MAIN PAGE ORCHESTRATION WITH LIVE FRAGMENT] ===
 def render_live_workspace(all_symbols: list[str], auto_refresh_live: bool) -> None:
     if auto_refresh_live:
         refresh_live_prices_tv(all_symbols)
@@ -371,31 +261,27 @@ def render_live_workspace(all_symbols: list[str], auto_refresh_live: bool) -> No
         st.info("אין עדיין נתונים להצגה. לחץ על 'הוספה / סנכרון מניות חדשות' למעלה.")
         return
 
-    # Status strip (Live indicator + last timestamp)
-    last_live = df["live_updated_at"].dropna().max() if "live_updated_at" in df.columns else None
-    last_eod = df["updated_at"].dropna().max() if "updated_at" in df.columns else None
+    live_series = df["live_updated_at"].dropna() if "live_updated_at" in df.columns else pd.Series(dtype=str)
+    eod_series = df["updated_at"].dropna() if "updated_at" in df.columns else pd.Series(dtype=str)
+    last_ts = live_series.max() if not live_series.empty else (eod_series.max() if not eod_series.empty else "")
+    ts_display = str(last_ts)[:19].replace("T", " ") if pd.notna(last_ts) and str(last_ts) else "--"
 
     st.markdown(
         f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
             <div>
                 {('<span class="live-pill"><span class="live-dot"></span>LIVE</span>' if auto_refresh_live else '<span class="badge-pill badge-slate">נתוני סגירה (EOD)</span>')}
             </div>
             <div style="color:#94A3B8; font-size:0.8rem;">
-                עדכון אחרון: <span class="ltr-num">{str(last_live or last_eod or '')[:19].replace('T', ' ')} UTC</span>
+                עדכון אחרון: <span class="ltr-num">{ts_display} UTC</span>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    df_filtered, view_mode = render_filters_and_sort(df)
-    render_kpi_bar(df_filtered, total_count=len(df))
-
-    if view_mode == "כרטיסיות":
-        render_cards_grid(df_filtered)
-    else:
-        render_full_table(df_filtered)
+    df_filtered = render_filters_and_sort(df)
+    render_cards_grid(df_filtered)
 
 
 def main() -> None:
