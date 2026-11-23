@@ -17,9 +17,9 @@ PALETTE = {
 }
 
 
-# === [SEC-02: GLOBAL RTL DARK MODE & CARD CSS] ===
+# === [SEC-02: GLOBAL RTL DARK MODE & SIDEBAR CSS] ===
 def apply_global_theme() -> None:
-    """Injects Obsidian Dark Mode, white-text right-side RTL sidebar, and LTR data anchors."""
+    """Injects Obsidian Dark Mode, uniform white RTL right sidebar, and LTR data anchors."""
     st.markdown(
         """
         <style>
@@ -44,46 +44,25 @@ def apply_global_theme() -> None:
             text-align: right !important;
         }
 
-        /* Put Brand Header ABOVE Navigation inside Sidebar */
-        [data-testid="stSidebarContent"] {
-            display: flex !important;
-            flex-direction: column !important;
-        }
-        [data-testid="stSidebarHeader"] {
-            order: 1 !important;
-        }
-        [data-testid="stSidebarUserContent"] {
-            order: 2 !important;
-            padding-top: 0 !important;
-            padding-bottom: 0 !important;
-        }
+        /* Uniform Clean White Typography for Sidebar Items (No Icons) */
         [data-testid="stSidebarNav"] {
-            order: 3 !important;
-            padding-top: 6px !important;
-        }
-
-        /* Sidebar White Typography & Clean No-Icon Layout */
-        [data-testid="stSidebarNav"] span,
-        [data-testid="stSidebarNav"] p,
-        [data-testid="stSidebarNav"] a,
-        [data-testid="stNavSectionHeader"],
-        [data-testid="stSidebarNavSeparator"] {
-            color: #F8FAFC !important;
-            direction: rtl !important;
-            text-align: right !important;
-        }
-        [data-testid="stNavSectionHeader"] {
-            font-size: 0.92rem !important;
-            font-weight: 800 !important;
-            color: #FFFFFF !important;
-            letter-spacing: 0.2px;
-            margin-top: 10px !important;
+            padding-top: 16px !important;
         }
         [data-testid="stSidebarNav"] a {
             border-radius: 10px !important;
-            margin: 2px 8px !important;
-            padding: 6px 12px !important;
+            margin: 4px 10px !important;
+            padding: 9px 14px !important;
+            direction: rtl !important;
+            text-align: right !important;
             transition: background-color 0.15s ease !important;
+        }
+        [data-testid="stSidebarNav"] a span,
+        [data-testid="stSidebarNav"] a p {
+            color: #FFFFFF !important;
+            font-size: 0.96rem !important;
+            font-weight: 500 !important;
+            direction: rtl !important;
+            text-align: right !important;
         }
         [data-testid="stSidebarNav"] a:hover {
             background-color: #1A2234 !important;
@@ -96,30 +75,39 @@ def apply_global_theme() -> None:
             font-weight: 700 !important;
         }
 
+        /* Hide Deep Dive from Sidebar Nav (opened by clicking a stock card) */
+        [data-testid="stSidebarNav"] a[href*="deep_dive"] {
+            display: none !important;
+        }
+
         /* Header Bar Transparency */
         [data-testid="stHeader"] {
             background-color: rgba(11, 14, 20, 0.85) !important;
+        }
+
+        /* Fix Expander RTL Arrow Spacing */
+        [data-testid="stExpander"] summary {
+            direction: rtl !important;
+            text-align: right !important;
+            gap: 8px !important;
         }
 
         /* Strict LTR Isolation for Tickers, Prices, Percentages & Charts */
         .ltr-box, .ltr-num {
             direction: ltr !important;
             unicode-bidi: isolate !important;
-            text-align: left !important;
-        }
-        .ltr-right {
-            direction: ltr !important;
-            unicode-bidi: isolate !important;
-            text-align: right !important;
+            display: inline-block;
         }
 
-        /* KPI Summary Cards */
+        /* KPI Summary Cards (Strictly RTL Right-Aligned) */
         .kpi-card {
             background-color: #111622;
             border: 1px solid #1E2638;
             border-radius: 14px;
-            padding: 16px 18px;
-            margin-bottom: 10px;
+            padding: 15px 18px;
+            margin-bottom: 12px;
+            direction: rtl !important;
+            text-align: right !important;
             transition: border-color 0.2s ease;
         }
         .kpi-card:hover {
@@ -128,17 +116,24 @@ def apply_global_theme() -> None:
         .kpi-title {
             color: #94A3B8;
             font-size: 0.85rem;
+            font-weight: 600;
             margin-bottom: 6px;
+            direction: rtl !important;
+            text-align: right !important;
         }
         .kpi-value {
-            font-size: 1.65rem;
+            font-size: 1.6rem;
             font-weight: 700;
             color: #F8FAFC;
+            direction: rtl !important;
+            text-align: right !important;
         }
         .kpi-sub {
             font-size: 0.78rem;
-            color: #94A3B8;
+            color: #64748B;
             margin-top: 4px;
+            direction: rtl !important;
+            text-align: right !important;
         }
 
         /* Stock Card (Screener Grid) */
@@ -283,13 +278,15 @@ def apply_global_theme() -> None:
             display: inline-block;
         }
 
-        /* Deep Dive & Placeholder Boxes */
+        /* Deep Dive & Section Boxes */
         .profile-box {
             background-color: #111622;
             border: 1px solid #1E2638;
             border-radius: 14px;
             padding: 18px 20px;
             margin-bottom: 16px;
+            direction: rtl !important;
+            text-align: right !important;
         }
         .badge-pill {
             display: inline-block;
@@ -329,11 +326,6 @@ def apply_global_theme() -> None:
             border-color: #2563EB !important;
             background-color: #1E293B !important;
             color: #FFFFFF !important;
-        }
-        [data-baseweb="input"], [data-baseweb="select"] > div {
-            background-color: #111622 !important;
-            border-color: #1E2638 !important;
-            color: #F8FAFC !important;
         }
         </style>
         """,
