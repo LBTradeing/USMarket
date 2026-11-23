@@ -6,6 +6,39 @@ import streamlit as st
 from db import load_market_dataframe, save_manual_levels, refresh_live_prices_tv
 from ui_theme import render_logo_html, format_pct_color
 
+# Inline style constants (self-contained Obsidian Deep Dark theme)
+S_SECTION = (
+    "background-color:#111622; border:1px solid #1E2638; border-radius:16px; "
+    "padding:18px 20px; margin-bottom:16px; direction:rtl; text-align:right;"
+)
+S_SEC_TITLE = (
+    "font-size:1.08rem; font-weight:800; color:#F8FAFC; margin-bottom:14px; "
+    "display:flex; align-items:center; justify-content:space-between; "
+    "border-bottom:1px solid #1E2638; padding-bottom:10px;"
+)
+S_SUB_LBL = "font-size:0.86rem; font-weight:700; color:#94A3B8; margin:12px 0 8px 0;"
+S_GRID_5 = "display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:10px; margin-bottom:10px;"
+S_GRID_4 = "display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:12px;"
+S_GRID_3 = "display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; margin-bottom:14px;"
+S_GRID_2 = "display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px;"
+
+S_TILE_BASE = (
+    "background-color:#0D111A; border:1px solid #1A2233; border-radius:12px; "
+    "padding:12px 10px; text-align:center;"
+)
+S_TILE_GREEN = (
+    "background-color:rgba(16, 185, 129, 0.08); border:1px solid rgba(16, 185, 129, 0.35); "
+    "border-radius:12px; padding:12px 10px; text-align:center;"
+)
+S_TILE_RED = (
+    "background-color:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.35); "
+    "border-radius:12px; padding:12px 10px; text-align:center;"
+)
+S_TILE_LBL = "font-size:0.84rem; font-weight:600; color:#94A3B8; margin-bottom:6px;"
+S_TILE_VAL = (
+    "font-size:1.25rem; font-weight:800; direction:ltr; unicode-bidi:isolate; display:inline-block;"
+)
+
 
 def _html(raw: str) -> None:
     """Renders multi-line HTML cleanly without Markdown code-block indentation issues."""
@@ -55,13 +88,17 @@ def render_top_header_card(row: pd.Series) -> None:
             ed_date = pd.to_datetime(row["next_earnings_date"]).date()
             days_left = (ed_date - datetime.now(timezone.utc).date()).days
             if days_left >= 0:
-                earnings_badge = f'<span class="badge-pill badge-amber">דוחות קרובים: {ed_date} (בעוד {days_left} ימים)</span>'
+                earnings_badge = (
+                    f'<span class="badge-pill badge-amber">'
+                    f'דוחות קרובים: <span style="direction:ltr; unicode-bidi:isolate;">{ed_date}</span> (בעוד {days_left} ימים)'
+                    f'</span>'
+                )
         except Exception:
             pass
 
     _html(
         f"""
-        <div class="dd-section">
+        <div style="{S_SECTION}">
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:18px; direction:ltr;">
                 <div style="display:flex; align-items:center; gap:14px;">
                     {logo_html}
@@ -75,10 +112,10 @@ def render_top_header_card(row: pd.Series) -> None:
                     </div>
                 </div>
 
-                <div style="display:flex; align-items:center; gap:16px; background:#0D111A; border:1px solid #1A2233; border-radius:12px; padding:12px 20px;">
-                    <span style="font-size:1.65rem; font-weight:800; color:{pct_color};">{pct_str}</span>
+                <div style="display:flex; align-items:center; gap:18px; background:#0D111A; border:1px solid #1A2233; border-radius:12px; padding:12px 22px;">
+                    <span style="font-size:1.65rem; font-weight:800; color:{pct_color}; direction:ltr; unicode-bidi:isolate;">{pct_str}</span>
                     <span style="width:1px; height:28px; background:#1E2638;"></span>
-                    <span style="font-size:1.65rem; font-weight:800; color:#F8FAFC;">{price_str}</span>
+                    <span style="font-size:1.65rem; font-weight:800; color:#F8FAFC; direction:ltr; unicode-bidi:isolate;">{price_str}</span>
                 </div>
 
                 <div style="background:#0D111A; border:1px solid #1A2233; border-radius:12px; padding:10px 16px; min-width:210px; direction:rtl; text-align:right;">
@@ -86,7 +123,7 @@ def render_top_header_card(row: pd.Series) -> None:
                     <div style="font-size:0.98rem; font-weight:800; color:#94A3B8; margin-bottom:4px;">ממתין לאיתות</div>
                     <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:#64748B;">
                         <span>ציון משוקלל</span>
-                        <span class="ltr-num" style="font-weight:700;">-- / 100</span>
+                        <span style="font-weight:700; direction:ltr; unicode-bidi:isolate;">-- / 100</span>
                     </div>
                 </div>
             </div>
@@ -139,19 +176,19 @@ def render_price_performance(row: pd.Series) -> None:
             raw_v = row.get(col) if col in row.index and pd.notna(row.get(col)) else None
             pct_str, color = format_pct_color(float(raw_v) if raw_v is not None else None)
             tiles.append(
-                f'<div class="dd-tile">'
-                f'<div class="dd-tile-lbl">{label}</div>'
-                f'<div class="dd-tile-val" style="color:{color};">{pct_str}</div>'
+                f'<div style="{S_TILE_BASE}">'
+                f'<div style="{S_TILE_LBL}">{label}</div>'
+                f'<div style="{S_TILE_VAL} color:{color};">{pct_str}</div>'
                 f'</div>'
             )
-        grids_html.append(f'<div class="dd-grid-5">{"".join(tiles)}</div>')
+        grids_html.append(f'<div style="{S_GRID_5}">{"".join(tiles)}</div>')
 
     _html(
         f"""
-        <div class="dd-section">
-            <div class="dd-section-title">
+        <div style="{S_SECTION}">
+            <div style="{S_SEC_TITLE}">
                 <span>ביצועי מחיר ותשואות (%)</span>
-                <span class="ltr-num" style="font-size:0.82rem; color:#64748B;">PRICE PERFORMANCE</span>
+                <span style="font-size:0.82rem; color:#64748B; direction:ltr;">PRICE PERFORMANCE</span>
             </div>
             {"".join(grids_html)}
         </div>
@@ -176,24 +213,27 @@ def render_volume_momentum(row: pd.Series) -> None:
         v_str = _fmt_vol(v_raw)
 
         if v_raw is None or chg_raw is None:
-            cls = "dd-tile"
+            tile_style = S_TILE_BASE
             val_color = "#F8FAFC"
         elif float(chg_raw) >= 0:
-            cls = "dd-tile dd-tile-green"
+            tile_style = S_TILE_GREEN
             val_color = "#10B981"
         else:
-            cls = "dd-tile dd-tile-red"
+            tile_style = S_TILE_RED
             val_color = "#EF4444"
 
         vol_tiles.append(
-            f'<div class="{cls}">'
-            f'<div class="dd-tile-lbl">{label}</div>'
-            f'<div class="dd-tile-val" style="color:{val_color};">{v_str}</div>'
+            f'<div style="{tile_style}">'
+            f'<div style="{S_TILE_LBL}">{label}</div>'
+            f'<div style="{S_TILE_VAL} color:{val_color};">{v_str}</div>'
             f'</div>'
         )
 
-    # Relative Volume colored by Today's Direction ONLY when Rel Vol >= 1.0
-    today_chg = float(row["change_today_pct"]) if "change_today_pct" in row.index and pd.notna(row.get("change_today_pct")) else None
+    today_chg = (
+        float(row["change_today_pct"])
+        if "change_today_pct" in row.index and pd.notna(row.get("change_today_pct"))
+        else None
+    )
     rvol_specs = [
         ("Rel Vol 5D", "rel_vol_5d"),
         ("Rel Vol 10D", "rel_vol_10d"),
@@ -207,40 +247,40 @@ def render_volume_momentum(row: pd.Series) -> None:
         r_raw = row.get(r_col) if r_col in row.index and pd.notna(row.get(r_col)) else None
         if r_raw is None:
             r_str = "--"
-            cls = "dd-tile"
+            tile_style = S_TILE_BASE
             val_color = "#94A3B8"
         else:
             rv = float(r_raw)
             r_str = f"{rv:.2f}x"
             if rv >= 1.0 and today_chg is not None:
                 if today_chg >= 0:
-                    cls = "dd-tile dd-tile-green"
+                    tile_style = S_TILE_GREEN
                     val_color = "#10B981"
                 else:
-                    cls = "dd-tile dd-tile-red"
+                    tile_style = S_TILE_RED
                     val_color = "#EF4444"
             else:
-                cls = "dd-tile"
+                tile_style = S_TILE_BASE
                 val_color = "#CBD5E1"
 
         rvol_tiles.append(
-            f'<div class="{cls}">'
-            f'<div class="dd-tile-lbl ltr-num">{label}</div>'
-            f'<div class="dd-tile-val" style="color:{val_color};">{r_str}</div>'
+            f'<div style="{tile_style}">'
+            f'<div style="{S_TILE_LBL} direction:ltr;">{label}</div>'
+            f'<div style="{S_TILE_VAL} color:{val_color};">{r_str}</div>'
             f'</div>'
         )
 
     _html(
         f"""
-        <div class="dd-section">
-            <div class="dd-section-title">
+        <div style="{S_SECTION}">
+            <div style="{S_SEC_TITLE}">
                 <span>מומנטום ונפחי מסחר</span>
-                <span class="ltr-num" style="font-size:0.82rem; color:#64748B;">VOLUME MOMENTUM</span>
+                <span style="font-size:0.82rem; color:#64748B; direction:ltr;">VOLUME MOMENTUM</span>
             </div>
-            <div class="dd-sub-label">נפח מסחר יומי (5 ימי מסחר אחרונים — ירוק ביום עליות / אדום ביום ירידות)</div>
-            <div class="dd-grid-5">{"".join(vol_tiles)}</div>
-            <div class="dd-sub-label">נפח יחסי לממוצע (Rel Vol — נצבע בירוק או באדום בחריגת נפח מעל 1.00x)</div>
-            <div class="dd-grid-5">{"".join(rvol_tiles)}</div>
+            <div style="{S_SUB_LBL}">נפח מסחר יומי (5 ימי מסחר אחרונים — ירוק ביום עליות / אדום ביום ירידות)</div>
+            <div style="{S_GRID_5}">{"".join(vol_tiles)}</div>
+            <div style="{S_SUB_LBL}">נפח יחסי לממוצע (Rel Vol — נצבע בירוק או באדום בחריגת נפח מעל 1.00x)</div>
+            <div style="{S_GRID_5}">{"".join(rvol_tiles)}</div>
         </div>
         """
     )
@@ -275,35 +315,44 @@ def render_moving_averages(row: pd.Series) -> None:
             ma_price_str = "--"
 
         if st_val == "Above":
-            card_cls = "dd-ma-card dd-ma-green"
+            card_style = (
+                "background-color:rgba(16, 185, 129, 0.07); border:1px solid rgba(16, 185, 129, 0.35); "
+                "border-radius:12px; padding:14px; text-align:center;"
+            )
             status_html = '<span style="color:#10B981;">ABOVE ▲</span>'
             dist_color = "#10B981"
         elif st_val == "Below":
-            card_cls = "dd-ma-card dd-ma-red"
+            card_style = (
+                "background-color:rgba(239, 68, 68, 0.07); border:1px solid rgba(239, 68, 68, 0.35); "
+                "border-radius:12px; padding:14px; text-align:center;"
+            )
             status_html = '<span style="color:#EF4444;">BELOW ▼</span>'
             dist_color = "#EF4444"
         else:
-            card_cls = "dd-ma-card"
+            card_style = (
+                "background-color:#0D111A; border:1px solid #1E2638; "
+                "border-radius:12px; padding:14px; text-align:center;"
+            )
             status_html = '<span style="color:#94A3B8;">--</span>'
             dist_color = "#94A3B8"
 
         cards.append(
-            f'<div class="{card_cls}">'
-            f'<div class="dd-ma-title">{title}</div>'
-            f'<div class="dd-ma-status">{status_html}</div>'
-            f'<div class="dd-ma-price">{ma_price_str}</div>'
-            f'<div class="dd-ma-dist" style="color:{dist_color};">{dist_combo}</div>'
+            f'<div style="{card_style}">'
+            f'<div style="font-size:0.9rem; font-weight:700; color:#CBD5E1; margin-bottom:4px; direction:ltr;">{title}</div>'
+            f'<div style="font-size:0.98rem; font-weight:800; margin-bottom:6px; direction:ltr;">{status_html}</div>'
+            f'<div style="font-size:1.2rem; font-weight:700; color:#F8FAFC; margin-bottom:8px; direction:ltr; unicode-bidi:isolate;">{ma_price_str}</div>'
+            f'<div style="font-size:0.9rem; font-weight:700; padding:5px 10px; border-radius:8px; background-color:#111622; color:{dist_color}; direction:ltr; unicode-bidi:isolate; display:inline-block;">{dist_combo}</div>'
             f'</div>'
         )
 
     _html(
         f"""
-        <div class="dd-section">
-            <div class="dd-section-title">
+        <div style="{S_SECTION}">
+            <div style="{S_SEC_TITLE}">
                 <span>ממוצעים נעים (סטטוס, שער ומרחק באחוזים ובדולרים)</span>
-                <span class="ltr-num" style="font-size:0.82rem; color:#64748B;">MOVING AVERAGES</span>
+                <span style="font-size:0.82rem; color:#64748B; direction:ltr;">MOVING AVERAGES</span>
             </div>
-            <div class="dd-grid-4">{"".join(cards)}</div>
+            <div style="{S_GRID_4}">{"".join(cards)}</div>
         </div>
         """
     )
@@ -312,11 +361,11 @@ def render_moving_averages(row: pd.Series) -> None:
 # === [SEC-06: SIGNAL ANALYSIS PLACEHOLDER (PHASE 5)] ===
 def render_signal_analysis() -> None:
     _html(
-        """
-        <div class="dd-section">
-            <div class="dd-section-title">
+        f"""
+        <div style="{S_SECTION}">
+            <div style="{S_SEC_TITLE}">
                 <span>ניתוח איתות ופירוט ניקוד</span>
-                <span class="ltr-num" style="font-size:0.82rem; color:#64748B;">SIGNAL ANALYSIS</span>
+                <span style="font-size:0.82rem; color:#64748B; direction:ltr;">SIGNAL ANALYSIS</span>
             </div>
             <div style="background:#0D111A; border:1px dashed #263147; border-radius:12px; padding:20px; text-align:center; color:#94A3B8; font-size:0.95rem;">
                 אין כרגע איתות פעיל לניתוח — תשתית זו תתמלא אוטומטית עם חיבור מנוע האיתותים בשלב 5.
@@ -337,75 +386,94 @@ def render_tech_levels(row: pd.Series, manual_levels: list[dict]) -> None:
     atr_sq_str = f"{atr_sq:.1f}%" if atr_sq is not None else "--"
     sq_width = max(0.0, min(100.0, atr_sq)) if atr_sq is not None else 0.0
 
-    def collect_pills(prefix: str, css_cls: str) -> str:
+    pill_res_style = (
+        "background-color:rgba(239, 68, 68, 0.12); border:1px solid rgba(239, 68, 68, 0.45); "
+        "color:#FCA5A5; font-size:0.98rem; font-weight:800; padding:6px 14px; border-radius:8px; "
+        "direction:ltr; unicode-bidi:isolate;"
+    )
+    pill_sup_style = (
+        "background-color:rgba(16, 185, 129, 0.12); border:1px solid rgba(16, 185, 129, 0.45); "
+        "color:#6EE7B7; font-size:0.98rem; font-weight:800; padding:6px 14px; border-radius:8px; "
+        "direction:ltr; unicode-bidi:isolate;"
+    )
+    pill_man_style = (
+        "background-color:rgba(37, 99, 235, 0.15); border:1px solid rgba(37, 99, 235, 0.45); "
+        "color:#93C5FD; font-size:0.94rem; font-weight:700; padding:6px 14px; border-radius:8px;"
+    )
+
+    def collect_pills(prefix: str, style_str: str) -> str:
         pills = []
         for i in range(1, 6):
             col = f"{prefix}_{i}"
             if col in row.index and pd.notna(row.get(col)):
-                pills.append(f'<span class="{css_cls}">${float(row[col]):,.2f}</span>')
-        return "".join(pills) if pills else '<span style="color:#64748B; font-size:0.85rem;">לא זוהו רמות בטווח</span>'
+                pills.append(f'<span style="{style_str}">${float(row[col]):,.2f}</span>')
+        return "".join(pills) if pills else '<span style="color:#64748B; font-size:0.86rem;">לא זוהו רמות בטווח</span>'
 
-    d_res_html = collect_pills("d_r", "dd-pill-res")
-    d_sup_html = collect_pills("d_s", "dd-pill-sup")
-    w_res_html = collect_pills("w_r", "dd-pill-res")
-    w_sup_html = collect_pills("w_s", "dd-pill-sup")
+    d_res_html = collect_pills("d_r", pill_res_style)
+    d_sup_html = collect_pills("d_s", pill_sup_style)
+    w_res_html = collect_pills("w_r", pill_res_style)
+    w_sup_html = collect_pills("w_s", pill_sup_style)
+
+    lvl_box_style = "background-color:#0D111A; border:1px solid #1A2233; border-radius:12px; padding:16px; text-align:center;"
+    pills_wrap_style = "display:flex; flex-wrap:wrap; justify-content:center; gap:8px; direction:ltr;"
 
     manual_block = ""
     if manual_levels:
         m_pills = "".join(
-            f'<span class="dd-pill-man">★ {html.escape(str(lvl.get("note", "רמה ידנית")))}: ${float(lvl.get("price", 0)):,.2f}</span>'
+            f'<span style="{pill_man_style}">★ {html.escape(str(lvl.get("note", "רמה ידנית")))}: '
+            f'<span style="direction:ltr; unicode-bidi:isolate;">${float(lvl.get("price", 0)):,.2f}</span></span>'
             for lvl in manual_levels
             if float(lvl.get("price", 0)) > 0
         )
         if m_pills:
             manual_block = f"""
-            <div class="dd-lvl-box" style="margin-top:14px;">
-                <div class="dd-lvl-group-title">רמות ידניות שמורות</div>
-                <div class="dd-pills-wrap" style="direction:rtl;">{m_pills}</div>
+            <div style="{lvl_box_style} margin-top:14px;">
+                <div style="font-size:0.98rem; font-weight:800; color:#F8FAFC; margin-bottom:10px;">רמות ידניות שמורות</div>
+                <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:8px; direction:rtl;">{m_pills}</div>
             </div>
             """
 
     _html(
         f"""
-        <div class="dd-section">
-            <div class="dd-section-title">
+        <div style="{S_SECTION}">
+            <div style="{S_SEC_TITLE}">
                 <span>רמות טכניות ומדדי תנודתיות (ATR)</span>
-                <span class="ltr-num" style="font-size:0.82rem; color:#64748B;">TECH LEVELS & VOLATILITY</span>
+                <span style="font-size:0.82rem; color:#64748B; direction:ltr;">TECH LEVELS & VOLATILITY</span>
             </div>
 
-            <div class="dd-grid-3">
-                <div class="dd-tile">
-                    <div class="dd-tile-lbl">טווח תנועה יומי (ATR 14)</div>
-                    <div class="dd-tile-val" style="color:#F8FAFC;">{atr_14_str}</div>
+            <div style="{S_GRID_3}">
+                <div style="{S_TILE_BASE}">
+                    <div style="{S_TILE_LBL}">טווח תנועה יומי (ATR 14)</div>
+                    <div style="{S_TILE_VAL} color:#F8FAFC;">{atr_14_str}</div>
                 </div>
-                <div class="dd-tile">
-                    <div class="dd-tile-lbl">תנודתיות באחוזים (ATR %)</div>
-                    <div class="dd-tile-val" style="color:#60A5FA;">{atr_pct_str}</div>
+                <div style="{S_TILE_BASE}">
+                    <div style="{S_TILE_LBL}">תנודתיות באחוזים (ATR %)</div>
+                    <div style="{S_TILE_VAL} color:#60A5FA;">{atr_pct_str}</div>
                 </div>
-                <div class="dd-tile">
-                    <div class="dd-tile-lbl">התכווצות תנודתיות (ATR Squeeze %)</div>
-                    <div class="dd-tile-val" style="color:#F59E0B;">{atr_sq_str}</div>
+                <div style="{S_TILE_BASE}">
+                    <div style="{S_TILE_LBL}">התכווצות תנודתיות (ATR Squeeze %)</div>
+                    <div style="{S_TILE_VAL} color:#F59E0B;">{atr_sq_str}</div>
                     <div style="width:80%; height:5px; background:#1E293B; border-radius:999px; margin:8px auto 0 auto; overflow:hidden;">
                         <div style="width:{sq_width}%; height:100%; background:#F59E0B;"></div>
                     </div>
                 </div>
             </div>
 
-            <div class="dd-grid-2">
-                <div class="dd-lvl-box">
-                    <div class="dd-lvl-group-title">רמות יומיות (Daily Levels)</div>
-                    <div class="dd-lvl-sub" style="color:#EF4444;">התנגדות (Resistance — מהקרובה לרחוקה)</div>
-                    <div class="dd-pills-wrap">{d_res_html}</div>
-                    <div class="dd-lvl-sub" style="color:#10B981; margin-top:14px;">תמיכה (Support — מהקרובה לרחוקה)</div>
-                    <div class="dd-pills-wrap">{d_sup_html}</div>
+            <div style="{S_GRID_2}">
+                <div style="{lvl_box_style}">
+                    <div style="font-size:0.98rem; font-weight:800; color:#F8FAFC; margin-bottom:12px;">רמות יומיות (Daily Levels)</div>
+                    <div style="font-size:0.82rem; font-weight:700; color:#EF4444; margin:8px 0 6px 0;">התנגדות (Resistance — מהקרובה לרחוקה)</div>
+                    <div style="{pills_wrap_style}">{d_res_html}</div>
+                    <div style="font-size:0.82rem; font-weight:700; color:#10B981; margin:14px 0 6px 0;">תמיכה (Support — מהקרובה לרחוקה)</div>
+                    <div style="{pills_wrap_style}">{d_sup_html}</div>
                 </div>
 
-                <div class="dd-lvl-box">
-                    <div class="dd-lvl-group-title">רמות שבועיות (Weekly Levels)</div>
-                    <div class="dd-lvl-sub" style="color:#EF4444;">התנגדות (Resistance — מהקרובה לרחוקה)</div>
-                    <div class="dd-pills-wrap">{w_res_html}</div>
-                    <div class="dd-lvl-sub" style="color:#10B981; margin-top:14px;">תמיכה (Support — מהקרובה לרחוקה)</div>
-                    <div class="dd-pills-wrap">{w_sup_html}</div>
+                <div style="{lvl_box_style}">
+                    <div style="font-size:0.98rem; font-weight:800; color:#F8FAFC; margin-bottom:12px;">רמות שבועיות (Weekly Levels)</div>
+                    <div style="font-size:0.82rem; font-weight:700; color:#EF4444; margin:8px 0 6px 0;">התנגדות (Resistance — מהקרובה לרחוקה)</div>
+                    <div style="{pills_wrap_style}">{w_res_html}</div>
+                    <div style="font-size:0.82rem; font-weight:700; color:#10B981; margin:14px 0 6px 0;">תמיכה (Support — מהקרובה לרחוקה)</div>
+                    <div style="{pills_wrap_style}">{w_sup_html}</div>
                 </div>
             </div>
             {manual_block}
@@ -435,7 +503,10 @@ def render_manual_levels_editor(symbol: str, manual_levels: list[dict]) -> None:
             st.markdown("**רמות ידניות קיימות:**")
             for idx, lvl in enumerate(manual_levels):
                 rc1, rc2, rc3 = st.columns([1.2, 2.5, 0.8])
-                rc1.markdown(f"<span class='ltr-num'>**${float(lvl.get('price', 0)):,.2f}**</span>", unsafe_allow_html=True)
+                rc1.markdown(
+                    f"<span style='direction:ltr; unicode-bidi:isolate;'>**${float(lvl.get('price', 0)):,.2f}**</span>",
+                    unsafe_allow_html=True,
+                )
                 rc2.write(lvl.get("note", ""))
                 if rc3.button("מחק", key=f"del_man_lvl_{symbol}_{idx}"):
                     updated = [x for i, x in enumerate(manual_levels) if i != idx]
