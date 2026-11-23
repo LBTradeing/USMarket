@@ -7,9 +7,6 @@ import pandas as pd
 import requests
 import yfinance as yf
 import streamlit as st
-from pydantic import BaseModel, Field
-from google import genai
-from google.genai import types
 from supabase import create_client, Client
 
 
@@ -53,7 +50,6 @@ def load_market_dataframe() -> pd.DataFrame:
     if not df_snap.empty:
         df = df.merge(df_snap, on="symbol", how="left")
 
-    # Effective display price (live_price if present, otherwise EOD close price)
     if "live_price" in df.columns and "price" in df.columns:
         df["display_price"] = df["live_price"].fillna(df["price"])
     elif "price" in df.columns:
@@ -156,17 +152,6 @@ SP_SECTOR_MAP = {
 }
 
 
-class SingleEnrichment(BaseModel):
-    sub_industry: str = Field(description="Standardized 2-4 word sub-industry in English.")
-    short_summary: str = Field(
-        description=(
-            "Factual business summary in Hebrew without marketing fluff. "
-            "1 short sentence (10-15 words) for simple traditional businesses, "
-            "or 2-3 focused sentences (up to 70 words) for tech/complex niches."
-        )
-    )
-
-
 def find_pending_new_symbols() -> list[str]:
     """Finds active watchlist symbols missing snapshot data or AI profile enrichment."""
     sb = get_supabase_client()
@@ -235,13 +220,11 @@ def sync_single_new_stock(raw_symbol: str) -> tuple[bool, str]:
     gemini_key = get_secret("GEMINI_API_KEY")
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    # 1. Ensure ticker exists in watchlist
     sb.table("watchlist").upsert(
         {"symbol": sym, "source": "manual", "is_active": True},
         on_conflict="symbol",
     ).execute()
 
-    # 2. Fetch TradingView Screener snapshot & metadata
     tv_row = {}
     tv_cols = [
         "name", "description", "exchange", "sector", "industry",
@@ -268,7 +251,6 @@ def sync_single_new_stock(raw_symbol: str) -> tuple[bool, str]:
     except Exception:
         pass
 
-    # 3. Fetch Finnhub company profile (logo, name, exchange) & upcoming earnings
     fh_prof = {}
     next_earnings = None
     if finnhub_key:
@@ -299,7 +281,6 @@ def sync_single_new_stock(raw_symbol: str) -> tuple[bool, str]:
         except Exception:
             pass
 
-    # 4. Download 3y historical bars via yfinance
     yf_sym = sym.replace(".", "-")
     df = yf.download(yf_sym, period="3y", interval="1d", auto_adjust=False, progress=False)
     if isinstance(df.columns, pd.MultiIndex):
@@ -317,7 +298,6 @@ def sync_single_new_stock(raw_symbol: str) -> tuple[bool, str]:
     if not price or price <= 0:
         return False, f"מחיר לא תקין עבור {sym}"
 
-    # 5. Build & enrich company_profiles (with Gemini AI)
     existing_prof_resp = sb.table("company_profiles").select("*").eq("symbol", sym).execute()
     existing_prof = existing_prof_resp.data[0] if existing_prof_resp.data else {}
 
@@ -341,6 +321,20 @@ def sync_single_new_stock(raw_symbol: str) -> tuple[bool, str]:
 
     if gemini_key and (not sub_industry or not short_summary):
         try:
+            from pydantic import BaseModel, Field
+            from google import genai
+            from google.genai import types
+
+            class SingleEnrichment(BaseModel):
+                sub_industry: str = Field(description="Standardized 2-4 word sub-industry in English.")
+                short_summary: str = Field(
+                    description=(
+                        "Factual business summary in Hebrew without marketing fluff. "
+                        "1 short sentence (10-15 words) for simple traditional businesses, "
+                        "or 2-3 focused sentences (up to 70 words) for tech/complex niches."
+                    )
+                )
+
             ai_client = genai.Client(api_key=gemini_key)
             prompt = (
                 f"Classify and summarize this US-listed company:\n"
@@ -377,7 +371,6 @@ def sync_single_new_stock(raw_symbol: str) -> tuple[bool, str]:
         on_conflict="symbol",
     ).execute()
 
-    # 6. Compute technical metrics & S/R levels for stocks_snapshot
     def pct_ret(lb: int):
         if len(closes) <= lb or float(closes.iloc[-(lb + 1)]) == 0:
             return None
