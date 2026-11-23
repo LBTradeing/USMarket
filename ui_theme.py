@@ -517,21 +517,36 @@ def apply_global_theme() -> None:
 
 # === [SEC-03: REUSABLE HTML COMPONENTS] ===
 def render_logo_html(symbol: str, logo_url: str | None = None, size: int = 38) -> str:
-    """Renders company logo with automatic fallback to clean monogram badge."""
+    """Renders company logo with multi-source fallback before monogram badge."""
     clean_sym = html.escape(symbol.split(":")[-1].strip().upper())
+    clean_fmp = clean_sym.replace(".", "-")
     initials = clean_sym[:2] if len(clean_sym) >= 2 else clean_sym
-    primary_url = (
-        logo_url.strip()
-        if logo_url and logo_url.strip()
-        else f"https://static2.finnhub.io/file/publicdatany/finnhubimage/stock_logo/{clean_sym}.png"
+
+    candidates: list[str] = []
+    if logo_url and logo_url.strip() and logo_url.strip().lower() not in ("none", "null"):
+        candidates.append(logo_url.strip())
+    candidates.extend(
+        [
+            f"https://financialmodelingprep.com/image-stock/{clean_fmp}.png",
+            f"https://static2.finnhub.io/file/publicdatany/finnhubimage/stock_logo/{clean_sym}.png",
+        ]
     )
-    safe_url = html.escape(primary_url)
+
+    unique_urls: list[str] = []
+    for u in candidates:
+        if u not in unique_urls:
+            unique_urls.append(u)
+
+    first_url = html.escape(unique_urls[0])
+    fallback_chain = html.escape("|".join(unique_urls[1:]))
 
     return (
         f'<div style="width:{size}px;height:{size}px;position:relative;flex-shrink:0;">'
-        f'<img src="{safe_url}" class="stock-logo" '
+        f'<img src="{first_url}" data-fallbacks="{fallback_chain}" class="stock-logo" '
         f'style="width:{size}px;height:{size}px;" '
-        f'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';" />'
+        f'onerror="var fb=this.getAttribute(\'data-fallbacks\');'
+        f'if(fb){{var arr=fb.split(\'|\');this.src=arr.shift();this.setAttribute(\'data-fallbacks\',arr.join(\'|\'));}}'
+        f'else{{this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\';}}" />'
         f'<div class="stock-monogram" style="display:none;width:{size}px;height:{size}px;">{initials}</div>'
         f"</div>"
     )
