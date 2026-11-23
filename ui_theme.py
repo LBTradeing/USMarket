@@ -19,7 +19,7 @@ PALETTE = {
 
 # === [SEC-02: GLOBAL RTL DARK MODE & CARD CSS] ===
 def apply_global_theme() -> None:
-    """Injects Obsidian Dark Mode, right-side RTL sidebar, and LTR data anchors."""
+    """Injects Obsidian Dark Mode, white-text right-side RTL sidebar, and LTR data anchors."""
     st.markdown(
         """
         <style>
@@ -43,9 +43,57 @@ def apply_global_theme() -> None:
             direction: rtl !important;
             text-align: right !important;
         }
-        [data-testid="stSidebar"] * {
+
+        /* Put Brand Header ABOVE Navigation inside Sidebar */
+        [data-testid="stSidebarContent"] {
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        [data-testid="stSidebarHeader"] {
+            order: 1 !important;
+        }
+        [data-testid="stSidebarUserContent"] {
+            order: 2 !important;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+        }
+        [data-testid="stSidebarNav"] {
+            order: 3 !important;
+            padding-top: 6px !important;
+        }
+
+        /* Sidebar White Typography & Clean No-Icon Layout */
+        [data-testid="stSidebarNav"] span,
+        [data-testid="stSidebarNav"] p,
+        [data-testid="stSidebarNav"] a,
+        [data-testid="stNavSectionHeader"],
+        [data-testid="stSidebarNavSeparator"] {
+            color: #F8FAFC !important;
             direction: rtl !important;
             text-align: right !important;
+        }
+        [data-testid="stNavSectionHeader"] {
+            font-size: 0.92rem !important;
+            font-weight: 800 !important;
+            color: #FFFFFF !important;
+            letter-spacing: 0.2px;
+            margin-top: 10px !important;
+        }
+        [data-testid="stSidebarNav"] a {
+            border-radius: 10px !important;
+            margin: 2px 8px !important;
+            padding: 6px 12px !important;
+            transition: background-color 0.15s ease !important;
+        }
+        [data-testid="stSidebarNav"] a:hover {
+            background-color: #1A2234 !important;
+        }
+        [data-testid="stSidebarNav"] a[aria-current="page"] {
+            background-color: #2563EB !important;
+        }
+        [data-testid="stSidebarNav"] a[aria-current="page"] span {
+            color: #FFFFFF !important;
+            font-weight: 700 !important;
         }
 
         /* Header Bar Transparency */
@@ -235,7 +283,7 @@ def apply_global_theme() -> None:
             display: inline-block;
         }
 
-        /* Deep Dive Profile Box */
+        /* Deep Dive & Placeholder Boxes */
         .profile-box {
             background-color: #111622;
             border: 1px solid #1E2638;
@@ -273,7 +321,7 @@ def apply_global_theme() -> None:
             border-radius: 10px !important;
             border: 1px solid #1E2638 !important;
             background-color: #151C2B !important;
-            color: #E2E8F0 !important;
+            color: #F8FAFC !important;
             font-weight: 600 !important;
             transition: all 0.15s ease !important;
         }
