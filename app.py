@@ -3,7 +3,7 @@ import streamlit as st
 from ui_theme import apply_global_theme
 
 st.set_page_config(
-    page_title="Watchlist | אנליטיקת שוק ויומן מסחר",
+    page_title="Watchlist | מעקב, אנליטיקה ויומן מסחר",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -16,12 +16,12 @@ apply_global_theme()
 with st.sidebar:
     st.markdown(
         """
-        <div style="padding: 8px 4px 18px 4px; border-bottom: 1px solid #1E2638; margin-bottom: 14px;">
-            <div class="ltr-box" style="font-size: 1.45rem; font-weight: 800; color: #F8FAFC; letter-spacing: 0.4px;">
+        <div style="padding: 4px 6px 14px 6px; border-bottom: 1px solid #1E2638; margin-bottom: 8px;">
+            <div class="ltr-box" style="font-size: 1.5rem; font-weight: 800; color: #FFFFFF; letter-spacing: 0.4px;">
                 Watchlist <span style="color: #2563EB;">●</span>
             </div>
             <div style="font-size: 0.78rem; color: #94A3B8; margin-top: 2px;">
-                פלטפורמת אנליטיקה וניהול מסחר
+                מעקב שוק, אנליטיקה וניהול מסחר
             </div>
         </div>
         """,
@@ -29,15 +29,20 @@ with st.sidebar:
     )
 
 pages = {
-    "אנליטיקת שוק": [
-        st.Page("views/screener.py", title="סורק מניות", icon="📊", default=True),
-        st.Page("views/deep_dive.py", title="ניתוח עומק", icon="🔍"),
+    "מצב השוק": [
+        st.Page("views/market_status.py", title="סקירת שוק ומדדים"),
     ],
-    "ניהול מסחר": [
-        st.Page("views/journal.py", title="יומן מסחר", icon="📒"),
+    "מעקב ואנליטיקה": [
+        st.Page("views/screener.py", title="מעקב מניות", default=True),
+        st.Page("views/deep_dive.py", title="ניתוח עומק"),
+    ],
+    "יומן מסחר": [
+        st.Page("views/journal.py", title="לוח בקרה"),
+        st.Page("views/trades.py", title="עסקאות"),
+        st.Page("views/trade_analytics.py", title="ניתוח עסקאות"),
     ],
     "איתותים": [
-        st.Page("views/signals.py", title="מנוע איתותים", icon="📡"),
+        st.Page("views/signals.py", title="מנוע איתותים"),
     ],
 }
 
