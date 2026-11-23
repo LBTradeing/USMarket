@@ -409,12 +409,20 @@ def sync_single_new_stock(raw_symbol: str) -> tuple[bool, str]:
         al = (-delta.clip(upper=0)).ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
         rsi = 100.0 if al.iloc[-1] == 0 else _clean_num(100.0 - (100.0 / (1.0 + ag.iloc[-1] / al.iloc[-1])), 2)
 
-    atr_14 = _clean_num(tv_row.get("ATR"), 2)
-    if atr_14 is None and len(df) >= 15:
+    atr_series = pd.Series(dtype=float)
+    if len(df) >= 15:
         pc = closes.shift(1)
         tr = pd.concat([(df["High"] - df["Low"]), (df["High"] - pc).abs(), (df["Low"] - pc).abs()], axis=1).max(axis=1)
-        atr_14 = _clean_num(tr.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean().iloc[-1], 2)
+        atr_series = tr.ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
+
+    atr_14 = _clean_num(tv_row.get("ATR"), 2) or (_clean_num(atr_series.iloc[-1], 2) if not atr_series.empty else None)
     atr_pct = _clean_num((atr_14 / price) * 100.0, 2) if atr_14 else None
+
+    atr_squeeze_pct = None
+    if not atr_series.empty and len(atr_series) >= 20:
+        peak_atr = float(atr_series.iloc[-50:].max())
+        if peak_atr > 0:
+            atr_squeeze_pct = _clean_num(max(0.0, min(100.0, (1.0 - (float(atr_series.iloc[-1]) / peak_atr)) * 100.0)), 1)
 
     d_sup, d_res = _extract_swing_sr(df, price, left=5, right=5)
     if len(df) >= 35:
@@ -424,6 +432,7 @@ def sync_single_new_stock(raw_symbol: str) -> tuple[bool, str]:
         w_sup, w_res = [None] * 5, [None] * 5
 
     snap_payload = {
+        "atr_squeeze_pct": atr_squeeze_pct,
         "symbol": sym,
         "price": price,
         "change_today_pct": _clean_num(tv_row.get("change"), 2) or pct_ret(1),
