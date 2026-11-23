@@ -112,35 +112,39 @@ def fetch_tradingview_data(
     return results
 
 
-# === [SEC-04: FINNHUB UPCOMING EARNINGS CALENDAR] ===
+# === [SEC-04: FINNHUB UPCOMING EARNINGS CALENDAR (CHUNKED 14-DAY WINDOWS)] ===
 def fetch_upcoming_earnings_finnhub() -> dict[str, str]:
-    """Fetches upcoming earnings dates (next 120 days) in a single Finnhub API call."""
+    """Fetches upcoming earnings dates over the next 98 days in 7 bi-weekly windows to avoid API truncation."""
     if not FINNHUB_API_KEY:
         print("FINNHUB_API_KEY not set; skipping upcoming earnings date lookup.")
         return {}
 
     today = datetime.now(timezone.utc).date()
-    end_date = today + timedelta(days=120)
     url = "https://finnhub.io/api/v1/calendar/earnings"
-    params = {
-        "from": today.isoformat(),
-        "to": end_date.isoformat(),
-        "token": FINNHUB_API_KEY,
-    }
     earnings_map: dict[str, str] = {}
-    try:
-        resp = requests.get(url, params=params, timeout=25)
-        resp.raise_for_status()
-        for item in resp.json().get("earningsCalendar", []):
-            sym = str(item.get("symbol", "")).strip().upper()
-            dt_str = str(item.get("date", "")).strip()
-            if sym and dt_str:
-                if sym not in earnings_map or dt_str < earnings_map[sym]:
-                    earnings_map[sym] = dt_str
-        print(f"Finnhub loaded upcoming earnings dates for {len(earnings_map)} market tickers.")
-    except Exception as e:
-        print(f"[WARN] Finnhub earnings fetch issue: {e}")
 
+    for chunk_idx in range(7):
+        win_start = today + timedelta(days=chunk_idx * 14)
+        win_end = win_start + timedelta(days=13)
+        params = {
+            "from": win_start.isoformat(),
+            "to": win_end.isoformat(),
+            "token": FINNHUB_API_KEY,
+        }
+        try:
+            resp = requests.get(url, params=params, timeout=25)
+            resp.raise_for_status()
+            for item in resp.json().get("earningsCalendar", []):
+                sym = str(item.get("symbol", "")).strip().upper()
+                dt_str = str(item.get("date", "")).strip()
+                if sym and dt_str:
+                    if sym not in earnings_map or dt_str < earnings_map[sym]:
+                        earnings_map[sym] = dt_str
+        except Exception as e:
+            print(f"[WARN] Finnhub earnings window {chunk_idx + 1}/7 issue: {e}")
+        time.sleep(0.4)
+
+    print(f"Finnhub loaded upcoming earnings dates for {len(earnings_map)} market tickers across 98 days.")
     return earnings_map
 
 
@@ -211,7 +215,7 @@ def fetch_historical_bars(
     return hist_map
 
 
-# === [SEC-06: TECHNICAL INDICATORS & SWING S/R LEVELS] ===
+# === [SEC-06: TECHNICAL INDICATORS, ATR SQUEEZE & SWING S/R LEVELS] ===
 def compute_wilder_rsi(closes: pd.Series, period: int = 14) -> float | None:
     if len(closes) < period + 1:
         return None
@@ -227,9 +231,9 @@ def compute_wilder_rsi(closes: pd.Series, period: int = 14) -> float | None:
     return clean_num(100.0 - (100.0 / (1.0 + rs)), 2)
 
 
-def compute_wilder_atr(df: pd.DataFrame, period: int = 14) -> float | None:
+def compute_atr_series(df: pd.DataFrame, period: int = 14) -> pd.Series:
     if len(df) < period + 1:
-        return None
+        return pd.Series(dtype=float)
     high = df["High"]
     low = df["Low"]
     prev_close = df["Close"].shift(1)
@@ -237,8 +241,7 @@ def compute_wilder_atr(df: pd.DataFrame, period: int = 14) -> float | None:
         [(high - low), (high - prev_close).abs(), (low - prev_close).abs()],
         axis=1,
     ).max(axis=1)
-    atr = tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    return clean_num(atr.iloc[-1], 4)
+    return tr.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
 
 
 def cluster_levels(levels: list[float], tolerance_pct: float = 0.004) -> list[float]:
@@ -321,7 +324,6 @@ def build_snapshot_row(
     closes = df["Close"] if has_df else pd.Series(dtype=float)
     vols = df["Volume"] if has_df else pd.Series(dtype=float)
 
-    # Price & Today % Change
     price = clean_num(tv.get("close"), 2)
     if price is None and has_df:
         price = clean_num(closes.iloc[-1], 2)
@@ -332,13 +334,11 @@ def build_snapshot_row(
     if change_today is None and len(closes) >= 2:
         change_today = pct_return_bars(closes, 1)
 
-    # Daily historical returns (1d..4d ago)
     c_1d = daily_step_return(closes, 1) if has_df else None
     c_2d = daily_step_return(closes, 2) if has_df else None
     c_3d = daily_step_return(closes, 3) if has_df else None
     c_4d = daily_step_return(closes, 4) if has_df else None
 
-    # Start of the week (WTD)
     wtd = None
     if has_df and len(df) >= 2:
         last_dt = df.index[-1]
@@ -355,7 +355,6 @@ def build_snapshot_row(
             if prev_wk_close > 0:
                 wtd = clean_num(((price - prev_wk_close) / prev_wk_close) * 100.0, 2)
 
-    # Multi-period returns
     weekly = clean_num(tv.get("Perf.W"), 2)
     if weekly is None and has_df:
         weekly = pct_return_bars(closes, 5)
@@ -390,7 +389,6 @@ def build_snapshot_row(
     if one_year is None and has_df:
         one_year = pct_return_bars(closes, 252)
 
-    # Volumes & Relative Volume (baseline excludes today's bar)
     daily_vol = int(tv["volume"]) if tv.get("volume") is not None else (
         int(vols.iloc[-1]) if has_df else None
     )
@@ -407,7 +405,6 @@ def build_snapshot_row(
             return None
         return clean_num(daily_vol / avg_v, 2)
 
-    # Moving Averages (20, 50, 150, 200)
     def calc_ma_block(period: int, tv_key: str | None) -> tuple[str | None, float | None, float | None]:
         ma_val = clean_num(tv.get(tv_key), 2) if tv_key else None
         if ma_val is None and has_df and len(closes) >= period:
@@ -423,17 +420,26 @@ def build_snapshot_row(
     ma150_st, ma150_v, ma150_d = calc_ma_block(150, None)
     ma200_st, ma200_v, ma200_d = calc_ma_block(200, "SMA200")
 
-    # RSI & ATR
     rsi = clean_num(tv.get("RSI"), 2)
     if rsi is None and has_df:
         rsi = compute_wilder_rsi(closes, 14)
 
+    atr_series = compute_atr_series(df, 14) if has_df else pd.Series(dtype=float)
     atr_14 = clean_num(tv.get("ATR"), 2)
-    if atr_14 is None and has_df:
-        atr_14 = compute_wilder_atr(df, 14)
+    if atr_14 is None and not atr_series.empty:
+        atr_14 = clean_num(atr_series.iloc[-1], 2)
     atr_pct = clean_num((atr_14 / price) * 100.0, 2) if (atr_14 is not None and price > 0) else None
 
-    # Daily & Weekly Support / Resistance Levels
+    # ATR Squeeze %: contraction of current ATR vs 50-session peak ATR (0% = peak volatility, higher = tighter squeeze)
+    atr_squeeze_pct = None
+    if not atr_series.empty and len(atr_series) >= 20:
+        recent_atr = atr_series.iloc[-50:]
+        peak_atr = float(recent_atr.max())
+        curr_atr_val = float(atr_series.iloc[-1])
+        if peak_atr > 0:
+            raw_sq = max(0.0, min(100.0, (1.0 - (curr_atr_val / peak_atr)) * 100.0))
+            atr_squeeze_pct = clean_num(raw_sq, 1)
+
     d_sup, d_res = extract_swing_sr(df, price, left=5, right=5) if has_df else ([None] * 5, [None] * 5)
     if has_df and len(df) >= 35:
         weekly_df = (
@@ -490,6 +496,7 @@ def build_snapshot_row(
         "rsi": rsi,
         "atr_14": atr_14,
         "atr_pct": atr_pct,
+        "atr_squeeze_pct": atr_squeeze_pct,
         "d_s_1": d_sup[0],
         "d_s_2": d_sup[1],
         "d_s_3": d_sup[2],
