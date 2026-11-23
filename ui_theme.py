@@ -327,6 +327,188 @@ def apply_global_theme() -> None:
             background-color: #1E293B !important;
             color: #FFFFFF !important;
         }
+        /* === DEEP DIVE COMPONENT STYLES (OBSIDIAN DEEP DARK) === */
+        .dd-section {
+            background-color: #111622;
+            border: 1px solid #1E2638;
+            border-radius: 16px;
+            padding: 18px 20px;
+            margin-bottom: 16px;
+            direction: rtl !important;
+            text-align: right !important;
+        }
+        .dd-section-title {
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #F8FAFC;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #1E2638;
+            padding-bottom: 10px;
+        }
+        .dd-sub-label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #94A3B8;
+            margin: 12px 0 8px 0;
+        }
+        .dd-grid-5 {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .dd-grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .dd-grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .dd-grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+        @media (max-width: 900px) {
+            .dd-grid-5, .dd-grid-4, .dd-grid-3, .dd-grid-2 {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        .dd-tile {
+            background-color: #0D111A;
+            border: 1px solid #1A2233;
+            border-radius: 12px;
+            padding: 12px 10px;
+            text-align: center;
+            transition: border-color 0.15s ease;
+        }
+        .dd-tile:hover {
+            border-color: #2B3954;
+        }
+        .dd-tile-green {
+            background-color: rgba(16, 185, 129, 0.08);
+            border: 1px solid rgba(16, 185, 129, 0.32);
+        }
+        .dd-tile-red {
+            background-color: rgba(239, 68, 68, 0.08);
+            border: 1px solid rgba(239, 68, 68, 0.32);
+        }
+        .dd-tile-lbl {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #94A3B8;
+            margin-bottom: 6px;
+        }
+        .dd-tile-val {
+            font-size: 1.22rem;
+            font-weight: 800;
+            direction: ltr !important;
+            unicode-bidi: isolate !important;
+            display: inline-block;
+        }
+        .dd-ma-card {
+            background-color: #0D111A;
+            border: 1px solid #1E2638;
+            border-radius: 12px;
+            padding: 14px;
+            text-align: center;
+        }
+        .dd-ma-green {
+            background-color: rgba(16, 185, 129, 0.07);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+        }
+        .dd-ma-red {
+            background-color: rgba(239, 68, 68, 0.07);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+        }
+        .dd-ma-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: #CBD5E1;
+            margin-bottom: 4px;
+            direction: ltr !important;
+        }
+        .dd-ma-status {
+            font-size: 0.95rem;
+            font-weight: 800;
+            margin-bottom: 6px;
+            direction: ltr !important;
+        }
+        .dd-ma-price {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #F8FAFC;
+            margin-bottom: 6px;
+            direction: ltr !important;
+        }
+        .dd-ma-dist {
+            font-size: 0.88rem;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 8px;
+            background-color: #111622;
+            direction: ltr !important;
+            display: inline-block;
+        }
+        .dd-lvl-box {
+            background-color: #0D111A;
+            border: 1px solid #1A2233;
+            border-radius: 12px;
+            padding: 14px 16px;
+            text-align: center;
+        }
+        .dd-lvl-group-title {
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: #F8FAFC;
+            margin-bottom: 12px;
+        }
+        .dd-lvl-sub {
+            font-size: 0.8rem;
+            font-weight: 700;
+            margin: 8px 0 6px 0;
+        }
+        .dd-pills-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            direction: ltr !important;
+        }
+        .dd-pill-res {
+            background-color: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            color: #FCA5A5;
+            font-size: 0.95rem;
+            font-weight: 800;
+            padding: 6px 12px;
+            border-radius: 8px;
+        }
+        .dd-pill-sup {
+            background-color: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.45);
+            color: #6EE7B7;
+            font-size: 0.95rem;
+            font-weight: 800;
+            padding: 6px 12px;
+            border-radius: 8px;
+        }
+        .dd-pill-man {
+            background-color: rgba(37, 99, 235, 0.15);
+            border: 1px solid rgba(37, 99, 235, 0.45);
+            color: #93C5FD;
+            font-size: 0.92rem;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 8px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
