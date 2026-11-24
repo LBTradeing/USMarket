@@ -11,33 +11,29 @@ st.set_page_config(
 
 apply_global_theme()
 
-# === [SEC-01B: COMPACT TOP SPACING, NARROW SIDEBAR & CLEAN SUB-MENU] ===
+# === [SEC-01B: COMPACT TOP SPACING & CLEAN SUB-MENU] ===
 st.markdown(
     """
     <style>
-    /* הצמדת התוכן לחלק העליון של המסך */
-    .block-container {
-        padding-top: 1.1rem !important;
-        padding-bottom: 1.5rem !important;
+    /* הצמדת התוכן לחלק העליון של המסך במחשב */
+    @media (min-width: 769px) {
+        .block-container {
+            padding-top: 1.1rem !important;
+            padding-bottom: 1.5rem !important;
+        }
     }
     header[data-testid="stHeader"] {
         background: transparent !important;
         height: 2.2rem !important;
     }
 
-    /* צמצום רוחב תפריט הצד */
-    section[data-testid="stSidebar"] {
-        width: 195px !important;
-        min-width: 195px !important;
-        max-width: 195px !important;
-    }
     section[data-testid="stSidebar"] > div:first-child {
-        padding-top: 1rem !important;
+        padding-top: 0.75rem !important;
         padding-left: 0.55rem !important;
         padding-right: 0.55rem !important;
     }
 
-    /* עיצוב תתי-הקטגוריות תחת יומן מסחר (נקי, מיושר לימין, ללא מסגרות כבדות) */
+    /* עיצוב תתי-הקטגוריות תחת יומן מסחר */
     .journal-sub-anchor + div[data-testid="stVerticalBlock"] {
         gap: 0.2rem !important;
         padding-right: 12px !important;
