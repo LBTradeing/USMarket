@@ -1,7 +1,6 @@
 # === [SEC-01: IMPORTS & STYLING HELPERS] ===
 import html
 from datetime import date, datetime
-import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -30,6 +29,10 @@ def _fmt_usd(val: float | None, signed: bool = False, decimals: int = 2) -> str:
     return f"${fmt.format(v)}"
 
 
+def _ltr_num(text: str) -> str:
+    return f'<span dir="ltr" style="display:inline-block;">{text}</span>'
+
+
 def inject_journal_home_css() -> None:
     _html(
         """
@@ -38,51 +41,59 @@ def inject_journal_home_css() -> None:
             background: linear-gradient(180deg, #111622 0%, #0D111A 100%);
             border: 1px solid #1E2638;
             border-radius: 16px;
-            padding: 16px 18px;
-            margin-bottom: 12px;
-            transition: border-color 0.2s ease, transform 0.15s ease;
+            padding: 15px 18px;
+            margin-bottom: 10px;
+            direction: rtl;
+            text-align: right;
+            transition: border-color 0.2s ease;
         }
         .jh-card:hover {
             border-color: #334155;
         }
         .jh-title {
-            font-size: 0.84rem;
+            font-size: 0.83rem;
             font-weight: 700;
             color: #94A3B8;
-            margin-bottom: 8px;
-            letter-spacing: 0.2px;
+            margin-bottom: 7px;
+            text-align: right;
+            direction: rtl;
         }
         .jh-value {
-            font-size: 1.55rem;
+            font-size: 1.5rem;
             font-weight: 800;
-            line-height: 1.2;
-            direction: ltr;
-            text-align: right;
-            margin-bottom: 6px;
+            line-height: 1.25;
+            text-align: right !important;
+            direction: rtl;
+            width: 100%;
+            margin-bottom: 5px;
         }
         .jh-sub {
-            font-size: 0.78rem;
+            font-size: 0.77rem;
             color: #64748B;
             line-height: 1.4;
-        }
-        .jh-section-label {
-            font-size: 0.92rem;
-            font-weight: 800;
-            color: #CBD5E1;
-            margin: 8px 0 10px 0;
+            text-align: right;
+            direction: rtl;
         }
         .jh-pulse-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 10px;
+            padding: 8px 11px;
             background: #0A0E17;
             border: 1px solid #1A2234;
             border-radius: 10px;
             margin-bottom: 6px;
-            font-size: 0.84rem;
+            font-size: 0.83rem;
+            direction: rtl;
         }
-        /* Force visual uppercase in Ticker input inside modal */
+        /* עיצוב מסגרות הגרפים כריבועים מעוגלים */
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            background: linear-gradient(180deg, #111622 0%, #0D111A 100%) !important;
+            border: 1px solid #1E2638 !important;
+            border-radius: 16px !important;
+            padding: 12px 14px 6px 14px !important;
+        }
+        /* נעילת שדה Ticker לאותיות גדולות */
         div[data-testid="stDialog"] input[type="text"] {
             text-transform: uppercase !important;
             font-weight: 700 !important;
@@ -278,7 +289,6 @@ def compute_dashboard_metrics(
                 "live_p": live_p,
                 "pnl": pnl_u,
                 "pnl_pct": pnl_pct,
-                "stop_loss": float(r["stop_loss"]) if pd.notna(r.get("stop_loss")) else None,
             }
         )
 
@@ -286,13 +296,10 @@ def compute_dashboard_metrics(
     tax_paid = float(closed_df["tax_paid"].fillna(0).sum()) if not closed_df.empty else 0.0
     fees_paid = float(df_trades["fees"].fillna(0).sum()) if not df_trades.empty else 0.0
 
-    # Available Cash = Deposits + Realized Net P&L - Currently Invested Capital
     available_cash = total_deposits + realized_pnl - invested_open
-    # Total Account Value = Available Cash + Current Market Value of Open Positions
     account_value = available_cash + invested_open + open_pnl
     exposure_pct = (invested_open / account_value * 100.0) if account_value > 0 else 0.0
 
-    # Win / Loss & Trade Stats
     wins_df = closed_df[closed_df["net_pnl"].fillna(0) > 0] if not closed_df.empty else pd.DataFrame()
     losses_df = closed_df[closed_df["net_pnl"].fillna(0) < 0] if not closed_df.empty else pd.DataFrame()
     n_wins = len(wins_df)
@@ -310,7 +317,6 @@ def compute_dashboard_metrics(
     worst_val = float(closed_df["net_pnl"].min()) if n_closed > 0 else 0.0
     worst_sym = str(closed_df.loc[closed_df["net_pnl"].idxmin(), "symbol"]) if n_closed > 0 else "--"
 
-    # Consistency Score (combines plan adherence + inverse return volatility)
     plan_valid = df_trades["according_to_plan"].dropna() if not df_trades.empty else pd.Series(dtype=str)
     plan_rate = float((plan_valid == "Yes").mean() * 100.0) if len(plan_valid) > 0 else 0.0
     if n_closed >= 2:
@@ -321,7 +327,6 @@ def compute_dashboard_metrics(
     else:
         consistency_score = round(plan_rate, 1)
 
-    # Streak & Monthly Pulse
     streak_count = 0
     streak_type = "נייטרלי"
     if not closed_df.empty and "close_date" in closed_df.columns:
@@ -384,187 +389,220 @@ def compute_dashboard_metrics(
     }
 
 
-# === [SEC-04: CHARTS - DAILY P/L & MULTI-COLORED EQUITY CURVE] ===
+# === [SEC-04: CHARTS - EQUITY CURVE (RIGHT) & DAILY P/L (LEFT)] ===
 def render_charts_row(df_trades: pd.DataFrame, df_cash: pd.DataFrame) -> None:
-    col_daily, col_eq = st.columns(2)
+    # ב-RTL העמודה הראשונה מוצגת בצד ימין והשנייה בצד שמאל
+    col_right_eq, col_left_daily = st.columns(2)
+    closed_df = df_trades[df_trades["status"] == "Closed"].copy() if not df_trades.empty else pd.DataFrame()
 
-    # --- Chart 1: Daily P/L Bar Chart ---
-    with col_daily:
-        _html('<div class="jh-card" style="padding-bottom:8px;"><div class="jh-title" style="font-size:0.95rem; color:#F8FAFC;">רווח / הפסד יומי - Daily P/L</div>')
-        closed_df = df_trades[df_trades["status"] == "Closed"].copy() if not df_trades.empty else pd.DataFrame()
-        if not closed_df.empty and closed_df["close_date"].notna().any():
-            closed_df["dt"] = pd.to_datetime(closed_df["close_date"], errors="coerce")
-            daily = (
-                closed_df.dropna(subset=["dt"])
-                .groupby("dt")["net_pnl"]
-                .sum()
-                .sort_index()
-            )
-            x_labels = [d.strftime("%d/%m/%Y") for d in daily.index]
-            y_vals = [round(float(v), 2) for v in daily.values]
-            bar_colors = ["#10B981" if v >= 0 else "#EF4444" for v in y_vals]
+    # --- Right Chart: Equity Curve (Last 18 points for clean visual) ---
+    with col_right_eq:
+        with st.container(border=True):
+            hdr_c1, hdr_c2 = st.columns([1.15, 1.35])
+            with hdr_c1:
+                _html(
+                    '<div style="font-size:0.93rem; font-weight:800; color:#F8FAFC; text-align:right; padding-top:4px;">'
+                    'צמיחת הון - Equity Curve'
+                    '</div>'
+                )
+            with hdr_c2:
+                eq_mode = st.radio(
+                    "מצב גרף",
+                    ["כולל הפקדות", "רווח/הפסד מסחר בלבד"],
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key="eq_curve_mode",
+                )
 
-            fig_bar = go.Figure(
-                data=[
-                    go.Bar(
-                        x=x_labels,
-                        y=y_vals,
-                        marker_color=bar_colors,
-                        marker_line_width=0,
-                        hovertemplate="<b>%{x}</b><br>רווח/הפסד: $%{y:,.2f}<extra></extra>",
+            events = []
+            if eq_mode == "כולל הפקדות" and not df_cash.empty:
+                for _, r in df_cash.iterrows():
+                    dt_v = pd.to_datetime(r["tx_date"], errors="coerce")
+                    amt = float(r["amount_usd"])
+                    if pd.notna(dt_v) and amt > 0:
+                        signed_amt = amt if r["tx_type"] == "Deposit" else -amt
+                        events.append({"dt": dt_v, "kind": "deposit", "delta": signed_amt})
+
+            if not closed_df.empty:
+                for _, r in closed_df.iterrows():
+                    dt_v = pd.to_datetime(r["close_date"], errors="coerce")
+                    pnl_v = float(r["net_pnl"]) if pd.notna(r.get("net_pnl")) else 0.0
+                    if pd.notna(dt_v):
+                        events.append({"dt": dt_v, "kind": "trade", "delta": pnl_v})
+
+            if events:
+                ev_df = pd.DataFrame(events).sort_values("dt")
+                points = []
+                running_eq = 0.0
+                for dt_val, grp in ev_df.groupby("dt"):
+                    dep_d = float(grp[grp["kind"] == "deposit"]["delta"].sum())
+                    trd_d = float(grp[grp["kind"] == "trade"]["delta"].sum())
+                    if dep_d != 0:
+                        running_eq += dep_d
+                        points.append(
+                            {
+                                "short_lbl": dt_val.strftime("%d/%m"),
+                                "full_lbl": dt_val.strftime("%d/%m/%Y"),
+                                "y": round(running_eq, 2),
+                                "kind": "deposit",
+                                "delta": round(dep_d, 2),
+                            }
+                        )
+                    if trd_d != 0 or dep_d == 0:
+                        running_eq += trd_d
+                        points.append(
+                            {
+                                "short_lbl": dt_val.strftime("%d/%m"),
+                                "full_lbl": dt_val.strftime("%d/%m/%Y"),
+                                "y": round(running_eq, 2),
+                                "kind": "profit" if trd_d >= 0 else "loss",
+                                "delta": round(trd_d, 2),
+                            }
+                        )
+
+                # צמצום ל-18 נקודות אחרונות לתצוגה נקייה ומרווחת בדף הבית
+                view_pts = points[-18:]
+
+                fig_eq = go.Figure()
+                for i in range(1, len(view_pts)):
+                    p0 = view_pts[i - 1]
+                    p1 = view_pts[i]
+                    if p1["kind"] == "deposit":
+                        seg_color = "#38BDF8"
+                    elif p1["y"] >= p0["y"]:
+                        seg_color = "#10B981"
+                    else:
+                        seg_color = "#EF4444"
+
+                    fig_eq.add_trace(
+                        go.Scatter(
+                            x=[i - 1, i],
+                            y=[p0["y"], p1["y"]],
+                            mode="lines",
+                            line=dict(color=seg_color, width=3.2),
+                            hoverinfo="skip",
+                            showlegend=False,
+                        )
                     )
+
+                pt_colors = [
+                    "#38BDF8" if p["kind"] == "deposit" else ("#10B981" if p["kind"] == "profit" else "#EF4444")
+                    for p in view_pts
                 ]
-            )
-            fig_bar.update_layout(
-                height=290,
-                margin=dict(l=12, r=12, t=10, b=36),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(family="Assistant, Rubik, sans-serif", color="#94A3B8", size=11),
-                xaxis=dict(showgrid=False, tickangle=-35, tickfont=dict(size=10)),
-                yaxis=dict(showgrid=True, gridcolor="#1E2638", zeroline=True, zerolinecolor="#334155"),
-                bargap=0.28,
-            )
-            st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
-        else:
-            st.info("אין עדיין עסקאות סגורות להצגה בגרף היומי.")
-        _html("</div>")
-
-    # --- Chart 2: Equity Curve with Green (Profit), Red (Loss), Sky-Blue (Deposit) ---
-    with col_eq:
-        _html('<div class="jh-card" style="padding-bottom:8px;">')
-        hdr_c1, hdr_c2 = st.columns([1.4, 1.3])
-        with hdr_c1:
-            _html('<div class="jh-title" style="font-size:0.95rem; color:#F8FAFC; margin-top:4px;">צמיחת הון - Equity Curve</div>')
-        with hdr_c2:
-            eq_mode = st.radio(
-                "מצב גרף",
-                ["כולל הפקדות", "רווח/הפסד מסחר בלבד"],
-                horizontal=True,
-                label_visibility="collapsed",
-                key="eq_curve_mode",
-            )
-
-        events = []
-        if eq_mode == "כולל הפקדות" and not df_cash.empty:
-            for _, r in df_cash.iterrows():
-                dt_v = pd.to_datetime(r["tx_date"], errors="coerce")
-                amt = float(r["amount_usd"])
-                if pd.notna(dt_v) and amt > 0:
-                    signed_amt = amt if r["tx_type"] == "Deposit" else -amt
-                    events.append({"dt": dt_v, "kind": "deposit", "delta": signed_amt})
-
-        if not closed_df.empty:
-            for _, r in closed_df.iterrows():
-                dt_v = pd.to_datetime(r["close_date"], errors="coerce")
-                pnl_v = float(r["net_pnl"]) if pd.notna(r.get("net_pnl")) else 0.0
-                if pd.notna(dt_v):
-                    events.append({"dt": dt_v, "kind": "trade", "delta": pnl_v})
-
-        if events:
-            ev_df = pd.DataFrame(events).sort_values("dt")
-            points = []
-            running_eq = 0.0
-            for dt_val, grp in ev_df.groupby("dt"):
-                dep_d = float(grp[grp["kind"] == "deposit"]["delta"].sum())
-                trd_d = float(grp[grp["kind"] == "trade"]["delta"].sum())
-                if dep_d != 0:
-                    running_eq += dep_d
-                    points.append(
-                        {
-                            "label": dt_val.strftime("%d/%m/%Y"),
-                            "y": round(running_eq, 2),
-                            "kind": "deposit",
-                            "delta": round(dep_d, 2),
-                        }
-                    )
-                if trd_d != 0 or dep_d == 0:
-                    running_eq += trd_d
-                    points.append(
-                        {
-                            "label": dt_val.strftime("%d/%m/%Y"),
-                            "y": round(running_eq, 2),
-                            "kind": "profit" if trd_d >= 0 else "loss",
-                            "delta": round(trd_d, 2),
-                        }
-                    )
-
-            fig_eq = go.Figure()
-            # Draw segment-by-segment colored lines
-            for i in range(1, len(points)):
-                p0 = points[i - 1]
-                p1 = points[i]
-                if p1["kind"] == "deposit":
-                    seg_color = "#38BDF8"  # Sky blue for deposit jump
-                elif p1["y"] >= p0["y"]:
-                    seg_color = "#10B981"  # Green for trading profit
-                else:
-                    seg_color = "#EF4444"  # Red for trading loss
-
+                pt_symbols = ["diamond" if p["kind"] == "deposit" else "circle" for p in view_pts]
+                pt_texts = [
+                    f"{p['full_lbl']}<br>{'הפקדה' if p['kind'] == 'deposit' else 'תוצאת מסחר'}: {p['delta']:+,.2f}$<br>שווי מצטבר: ${p['y']:,.2f}"
+                    for p in view_pts
+                ]
                 fig_eq.add_trace(
                     go.Scatter(
-                        x=[i - 1, i],
-                        y=[p0["y"], p1["y"]],
-                        mode="lines",
-                        line=dict(color=seg_color, width=3),
-                        hoverinfo="skip",
+                        x=list(range(len(view_pts))),
+                        y=[p["y"] for p in view_pts],
+                        mode="markers",
+                        marker=dict(color=pt_colors, size=7.5, symbol=pt_symbols, line=dict(width=1, color="#0B0E14")),
+                        text=pt_texts,
+                        hovertemplate="%{text}<extra></extra>",
                         showlegend=False,
                     )
                 )
 
-            # Overlay markers with rich Hebrew hover tooltips
-            pt_colors = [
-                "#38BDF8" if p["kind"] == "deposit" else ("#10B981" if p["kind"] == "profit" else "#EF4444")
-                for p in points
-            ]
-            pt_symbols = ["diamond" if p["kind"] == "deposit" else "circle" for p in points]
-            pt_texts = [
-                f"{p['label']}<br>{'הפקדה' if p['kind'] == 'deposit' else 'תוצאת מסחר'}: {p['delta']:+,.2f}$<br>שווי מצטבר: ${p['y']:,.2f}"
-                for p in points
-            ]
-            fig_eq.add_trace(
-                go.Scatter(
-                    x=list(range(len(points))),
-                    y=[p["y"] for p in points],
-                    mode="markers",
-                    marker=dict(color=pt_colors, size=7, symbol=pt_symbols, line=dict(width=1, color="#0B0E14")),
-                    text=pt_texts,
-                    hovertemplate="%{text}<extra></extra>",
-                    showlegend=False,
+                step = max(1, len(view_pts) // 8)
+                tick_idx = list(range(0, len(view_pts), step))
+                tick_lbl = [view_pts[idx]["short_lbl"] for idx in tick_idx]
+
+                fig_eq.update_layout(
+                    height=265,
+                    margin=dict(l=52, r=16, t=12, b=46),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(family="Assistant, Rubik, sans-serif", color="#94A3B8", size=11),
+                    xaxis=dict(
+                        showgrid=False,
+                        tickmode="array",
+                        tickvals=tick_idx,
+                        ticktext=tick_lbl,
+                        tickangle=0,
+                        tickfont=dict(size=10.5),
+                    ),
+                    yaxis=dict(
+                        showgrid=True,
+                        gridcolor="#1E2638",
+                        zeroline=True,
+                        zerolinecolor="#334155",
+                        tickprefix="$",
+                        tickfont=dict(size=10.5),
+                    ),
                 )
-            )
+                st.plotly_chart(fig_eq, use_container_width=True, config={"displayModeBar": False})
+                _html(
+                    '<div style="display:flex; gap:16px; justify-content:flex-start; direction:rtl; font-size:0.75rem; color:#94A3B8; padding:0 4px 2px 4px;">'
+                    '<span><b style="color:#10B981;">●</b> רווח מעסקה</span>'
+                    '<span><b style="color:#EF4444;">●</b> הפסד מעסקה</span>'
+                    '<span><b style="color:#38BDF8;">◆</b> הפקדת הון</span>'
+                    '</div>'
+                )
+            else:
+                st.info("אין עדיין נתונים להצגת עקומת ההון.")
 
-            step = max(1, len(points) // 10)
-            tick_idx = list(range(0, len(points), step))
-            tick_lbl = [points[idx]["label"] for idx in tick_idx]
-
-            fig_eq.update_layout(
-                height=265,
-                margin=dict(l=12, r=12, t=6, b=36),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(family="Assistant, Rubik, sans-serif", color="#94A3B8", size=11),
-                xaxis=dict(
-                    showgrid=False,
-                    tickmode="array",
-                    tickvals=tick_idx,
-                    ticktext=tick_lbl,
-                    tickangle=-35,
-                    tickfont=dict(size=10),
-                ),
-                yaxis=dict(showgrid=True, gridcolor="#1E2638", zeroline=True, zerolinecolor="#334155"),
-            )
-            st.plotly_chart(fig_eq, use_container_width=True, config={"displayModeBar": False})
+    # --- Left Chart: Daily P/L Bar Chart (Last 14 trading days for clean visual) ---
+    with col_left_daily:
+        with st.container(border=True):
             _html(
-                '<div style="display:flex; gap:16px; justify-content:flex-end; font-size:0.75rem; color:#94A3B8; padding:0 8px 4px 8px;">'
-                '<span><b style="color:#10B981;">●</b> רווח מעסקה</span>'
-                '<span><b style="color:#EF4444;">●</b> הפסד מעסקה</span>'
-                '<span><b style="color:#38BDF8;">◆</b> הפקדת הון</span>'
+                '<div style="display:flex; justify-content:space-between; align-items:center; direction:rtl; padding-top:4px; margin-bottom:2px;">'
+                '<span style="font-size:0.93rem; font-weight:800; color:#F8FAFC;">רווח / הפסד יומי - Daily P/L</span>'
+                '<span style="font-size:0.74rem; color:#64748B;">14 ימי מסחר אחרונים</span>'
                 '</div>'
             )
-        else:
-            st.info("אין עדיין נתונים להצגת עקומת ההון.")
-        _html("</div>")
+            if not closed_df.empty and closed_df["close_date"].notna().any():
+                closed_df["dt"] = pd.to_datetime(closed_df["close_date"], errors="coerce")
+                daily = (
+                    closed_df.dropna(subset=["dt"])
+                    .groupby("dt")["net_pnl"]
+                    .sum()
+                    .sort_index()
+                    .tail(14)
+                )
+                x_short = [d.strftime("%d/%m") for d in daily.index]
+                x_full = [d.strftime("%d/%m/%Y") for d in daily.index]
+                y_vals = [round(float(v), 2) for v in daily.values]
+                bar_colors = ["#10B981" if v >= 0 else "#EF4444" for v in y_vals]
+
+                fig_bar = go.Figure(
+                    data=[
+                        go.Bar(
+                            x=x_short,
+                            y=y_vals,
+                            customdata=x_full,
+                            marker_color=bar_colors,
+                            marker_line_width=0,
+                            hovertemplate="<b>%{customdata}</b><br>רווח/הפסד: $%{y:,.2f}<extra></extra>",
+                        )
+                    ]
+                )
+                fig_bar.update_layout(
+                    height=291,
+                    margin=dict(l=48, r=16, t=12, b=46),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(family="Assistant, Rubik, sans-serif", color="#94A3B8", size=11),
+                    xaxis=dict(
+                        showgrid=False,
+                        tickangle=-25,
+                        tickfont=dict(size=10.5),
+                    ),
+                    yaxis=dict(
+                        showgrid=True,
+                        gridcolor="#1E2638",
+                        zeroline=True,
+                        zerolinecolor="#334155",
+                        tickprefix="$",
+                        tickfont=dict(size=10.5),
+                    ),
+                    bargap=0.32,
+                )
+                st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
+            else:
+                st.info("אין עדיין עסקאות סגורות להצגה בגרף היומי.")
 
 
 # === [SEC-05: MAIN JOURNAL HOME DASHBOARD VIEW] ===
@@ -580,14 +618,8 @@ def render_journal_home() -> None:
     df_trades, df_cash = load_journal_data()
     m = compute_dashboard_metrics(df_trades, df_cash, price_map)
 
-    # Top Header & Action Buttons
-    hdr_left, btn_col1, btn_col2 = st.columns([2.6, 1.1, 1.0])
-    with hdr_left:
-        _html(
-            '<div style="font-size:1.35rem; font-weight:800; color:#F8FAFC; padding-top:4px;">'
-            'יומן מסחר - עמוד הבית'
-            '</div>'
-        )
+    # Top Action Buttons aligned to the RIGHT (no page title)
+    btn_col1, btn_col2, _spacer = st.columns([1.15, 1.0, 3.1])
     with btn_col1:
         if st.button("＋ פתיחת עסקה חדשה", type="primary", use_container_width=True):
             open_new_trade_dialog(df_market)
@@ -599,49 +631,49 @@ def render_journal_home() -> None:
     row1_cards = [
         (
             "שווי חשבון - Account Value",
-            _fmt_usd(m["account_value"]),
+            _ltr_num(_fmt_usd(m["account_value"])),
             "#F8FAFC",
             "הון פנוי + שווי פוזיציות פתוחות",
         ),
         (
             "הון מושקע - Invested Capital",
-            _fmt_usd(m["invested_open"]),
+            _ltr_num(_fmt_usd(m["invested_open"])),
             "#60A5FA",
             f"מושקע כעת ב-{m['n_open']} פוזיציות",
         ),
         (
             "הון פנוי - Available Cash",
-            _fmt_usd(m["available_cash"]),
+            _ltr_num(_fmt_usd(m["available_cash"])),
             "#38BDF8" if m["available_cash"] >= 0 else "#EF4444",
             "מזומן זמין לפתיחת עסקאות",
         ),
         (
             "רווח / הפסד כולל - Total Net P/L",
-            _fmt_usd(m["realized_pnl"], signed=True),
+            _ltr_num(_fmt_usd(m["realized_pnl"], signed=True)),
             "#10B981" if m["realized_pnl"] >= 0 else "#EF4444",
             "נטו ממומש לאחר מס ועמלות",
         ),
         (
             "רווח / הפסד פתוח - Open P/L",
-            _fmt_usd(m["open_pnl"], signed=True),
+            _ltr_num(_fmt_usd(m["open_pnl"], signed=True)),
             "#10B981" if m["open_pnl"] >= 0 else "#EF4444",
             "שינוי חי בעסקאות הפעילות כרגע",
         ),
         (
             "מס ששולם - Tax Paid",
-            _fmt_usd(m["tax_paid"]),
+            _ltr_num(_fmt_usd(m["tax_paid"])),
             "#F59E0B",
             "סה״כ מס שנוכה מעסקאות סגורות",
         ),
         (
             "עמלות - Commissions",
-            _fmt_usd(m["fees_paid"]),
+            _ltr_num(_fmt_usd(m["fees_paid"])),
             "#CBD5E1",
             "סה״כ עמלות קנייה ומכירה",
         ),
         (
             "סה״כ הפקדות - Total Deposits",
-            _fmt_usd(m["total_deposits"]),
+            _ltr_num(_fmt_usd(m["total_deposits"])),
             "#A78BFA",
             "סך כל ההפקדות לחשבון המסחר",
         ),
@@ -649,13 +681,13 @@ def render_journal_home() -> None:
 
     for batch_start in (0, 4):
         cols = st.columns(4)
-        for col, (title, val_s, color, sub) in zip(cols, row1_cards[batch_start : batch_start + 4]):
+        for col, (title, val_html, color, sub) in zip(cols, row1_cards[batch_start : batch_start + 4]):
             with col:
                 _html(
                     f"""
                     <div class="jh-card">
                         <div class="jh-title">{title}</div>
-                        <div class="jh-value" style="color:{color};">{val_s}</div>
+                        <div class="jh-value" style="color:{color};">{val_html}</div>
                         <div class="jh-sub">{sub}</div>
                     </div>
                     """
@@ -665,37 +697,37 @@ def render_journal_home() -> None:
     row2_cards = [
         (
             "אחוזי הצלחה - Win Rate",
-            f"{m['win_rate']:.1f}%",
+            _ltr_num(f"{m['win_rate']:.1f}%"),
             "#10B981" if m["win_rate"] >= 50 else "#F59E0B",
             f"<span style='color:#10B981; font-weight:700;'>{m['n_wins']} רווחיות</span> &nbsp;|&nbsp; <span style='color:#EF4444; font-weight:700;'>{m['n_losses']} מפסידות</span>",
         ),
         (
             "כמות טריידים - Total Trades",
-            f"{m['n_total']}",
+            _ltr_num(f"{m['n_total']}"),
             "#F8FAFC",
             f"<span style='color:#60A5FA; font-weight:700;'>{m['n_open']} פתוחים</span> &nbsp;|&nbsp; <span style='color:#94A3B8; font-weight:700;'>{m['n_closed']} סגורים</span>",
         ),
         (
             "חשיפה נוכחית - Current Exposure",
-            f"{m['exposure_pct']:.1f}%",
+            _ltr_num(f"{m['exposure_pct']:.1f}%"),
             "#38BDF8" if m["exposure_pct"] <= 80 else "#F59E0B",
             "שיעור ההון המושקע מתוך שווי החשבון",
         ),
         (
             "ציון עקביות - Consistency Score",
-            f"{m['consistency_score']:.1f}",
+            _ltr_num(f"{m['consistency_score']:.1f}"),
             "#10B981" if m["consistency_score"] >= 75 else "#60A5FA",
             f"עמידה בתוכנית המסחר: {m['plan_rate']:.0f}%",
         ),
         (
             "ממוצע עסקה - Avg Win / Loss",
-            f"<span style='color:#10B981;'>+${m['avg_win']:,.2f}</span> <span style='color:#475569;'>/</span> <span style='color:#EF4444;'>-${abs(m['avg_loss']):,.2f}</span>",
+            f"<span dir='ltr' style='display:inline-block;'><span style='color:#10B981;'>+${m['avg_win']:,.2f}</span> <span style='color:#475569;'>/</span> <span style='color:#EF4444;'>-${abs(m['avg_loss']):,.2f}</span></span>",
             "#F8FAFC",
             "ממוצע עסקה מרוויחה מול מפסידה",
         ),
         (
             "הטובה / הגרועה - Best / Worst Trade",
-            f"<span style='color:#10B981;'>+${m['best_val']:,.2f}</span> <span style='color:#475569;'>/</span> <span style='color:#EF4444;'>-${abs(m['worst_val']):,.2f}</span>",
+            f"<span dir='ltr' style='display:inline-block;'><span style='color:#10B981;'>+${m['best_val']:,.2f}</span> <span style='color:#475569;'>/</span> <span style='color:#EF4444;'>-${abs(m['worst_val']):,.2f}</span></span>",
             "#F8FAFC",
             f"שיא: {m['best_sym']} &nbsp;|&nbsp; שפל: {m['worst_sym']}",
         ),
@@ -752,7 +784,7 @@ def render_journal_home() -> None:
             f"""
             <div class="jh-card" style="height:100%;">
                 <div class="jh-title">רצף נוכחי ומשמעת - Streak & Discipline</div>
-                <div class="jh-value" style="color:{st_color}; font-size:1.35rem; text-align:right; direction:rtl;">
+                <div class="jh-value" style="color:{st_color}; font-size:1.35rem;">
                     {m['streak_count']} {m['streak_type']} ברצף
                 </div>
                 <div class="jh-sub" style="margin-top:8px;">
@@ -770,11 +802,11 @@ def render_journal_home() -> None:
             <div class="jh-card" style="height:100%;">
                 <div class="jh-title">דופק חודשי - Monthly Pulse</div>
                 <div class="jh-value" style="color:{m_color}; font-size:1.4rem;">
-                    {_fmt_usd(m['month_closed_pnl'], signed=True)}
+                    {_ltr_num(_fmt_usd(m['month_closed_pnl'], signed=True))}
                 </div>
                 <div class="jh-sub" style="margin-top:8px;">
                     עסקאות שנפתחו החודש: <b style="color:#F8FAFC;">{m['month_opened_cnt']}</b><br>
-                    הפקדות החודש: <b style="color:#38BDF8;">{_fmt_usd(m['month_deposits'])}</b>
+                    הפקדות החודש: <b style="color:#38BDF8;">{_ltr_num(_fmt_usd(m['month_deposits']))}</b>
                 </div>
             </div>
             """
