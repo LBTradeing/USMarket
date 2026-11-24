@@ -509,6 +509,57 @@ def apply_global_theme() -> None:
             padding: 6px 12px;
             border-radius: 8px;
         }
+        /* שמירה על כפתורי השליטה בתפריט גלויים גם כשה-Header שקוף */
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    pointer-events: none !important;
+}
+header[data-testid="stHeader"] button,
+[data-testid="collapsedControl"],
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="stExpandSidebarButton"],
+[data-testid="stSidebarCollapseButton"] {
+    pointer-events: auto !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* התאמה ייעודית למסכי סלולר (עד 768px) */
+@media (max-width: 768px) {
+    /* כפתור פתיחת תפריט עדין בפינה הימנית העליונה */
+    [data-testid="collapsedControl"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stExpandSidebarButton"] {
+        position: fixed !important;
+        top: 12px !important;
+        right: 12px !important;
+        left: auto !important;
+        z-index: 999999 !important;
+        background: rgba(17, 22, 34, 0.92) !important;
+        border: 1px solid #334155 !important;
+        border-radius: 10px !important;
+        padding: 4px 8px !important;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45) !important;
+        backdrop-filter: blur(8px) !important;
+    }
+
+    /* כשהתפריט סגור במובייל - הסתרה מלאה שלא תתפוס מקום */
+    section[data-testid="stSidebar"][aria-expanded="false"] {
+        visibility: hidden !important;
+        pointer-events: none !important;
+        width: 0 !important;
+        min-width: 0 !important;
+    }
+
+    /* כשהתפריט פתוח במובייל - תצוגת מגירה נקייה מעל התוכן */
+    section[data-testid="stSidebar"][aria-expanded="true"] {
+        visibility: visible !important;
+        pointer-events: auto !important;
+        z-index: 999998 !important;
+        max-width: 82vw !important;
+        box-shadow: -8px 0 28px rgba(0, 0, 0, 0.65) !important;
+    }
+}
         </style>
         """,
         unsafe_allow_html=True,
