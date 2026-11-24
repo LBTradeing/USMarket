@@ -54,7 +54,9 @@ def inject_journal_home_css() -> None:
     _html(
         f"""
         <style>
-        .jh-card, .jh-card * {{
+        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;600;700;800&family=Rubik:wght@400;500;700;800&display=swap');
+
+        .jh-card, .jh-card *, .jh-bottom-grid, .jh-bottom-grid * {{
             font-family: {APP_FONT} !important;
         }}
         .jh-card {{
@@ -201,17 +203,39 @@ def inject_journal_home_css() -> None:
             gap: 2px;
             margin-top: 4px;
         }}
+        /* Bottom 3-card Equal-Height CSS Grid */
+        .jh-bottom-grid {{
+            display: grid;
+            grid-template-columns: 1.35fr 1fr 1fr;
+            gap: 14px;
+            align-items: stretch;
+            direction: rtl;
+            margin-top: 6px;
+        }}
+        .jh-bottom-grid .jh-card {{
+            margin-bottom: 0;
+            height: 100%;
+        }}
+        .jh-sub-box {{
+            background: #0A0E17;
+            border: 1px solid #1A2234;
+            border-radius: 12px;
+            padding: 11px 14px;
+        }}
         .jh-pulse-row {{
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 11px;
+            padding: 8px 12px;
             background: #0A0E17;
             border: 1px solid #1A2234;
             border-radius: 10px;
-            margin-bottom: 6px;
+            margin-bottom: 7px;
             font-size: 0.85rem;
             direction: rtl;
+        }}
+        .jh-pulse-row:last-child {{
+            margin-bottom: 0;
         }}
         div[data-testid="stVerticalBlockBorderWrapper"] {{
             background: linear-gradient(180deg, #111622 0%, #0D111A 100%) !important;
@@ -408,9 +432,13 @@ def compute_dashboard_metrics(
         pnl_u = (live_p - ep) * qty
         pnl_pct = ((live_p - ep) / ep * 100.0) if ep > 0 else 0.0
         open_pnl += pnl_u
+        sl_val = float(r["stop_loss"]) if pd.notna(r.get("stop_loss")) else None
         open_positions_list.append(
             {
                 "symbol": sym,
+                "qty": qty,
+                "entry_price": ep,
+                "stop_loss": sl_val,
                 "cost": cost,
                 "live_p": live_p,
                 "pnl": pnl_u,
@@ -447,6 +475,7 @@ def compute_dashboard_metrics(
     plan_valid = df_trades["according_to_plan"].dropna() if not df_trades.empty else pd.Series(dtype=str)
     plan_yes = int((plan_valid == "Yes").sum())
     plan_total = int(len(plan_valid))
+    plan_no = max(0, plan_total - plan_yes)
     plan_rate = float(plan_yes / plan_total * 100.0) if plan_total > 0 else 0.0
 
     if n_closed >= 2:
@@ -458,27 +487,31 @@ def compute_dashboard_metrics(
         consistency_score = round(plan_rate, 1)
 
     streak_count = 0
-    streak_type = "נייטרלי"
+    streak_dir = 0  # 1 = wins, -1 = losses, 0 = neutral
     if not closed_df.empty and "close_date" in closed_df.columns:
         c_sorted = closed_df.dropna(subset=["close_date", "net_pnl"]).sort_values(["close_date", "id"])
         if not c_sorted.empty:
             vals = c_sorted["net_pnl"].tolist()
             last_sign = 1 if vals[-1] > 0 else (-1 if vals[-1] < 0 else 0)
             if last_sign != 0:
-                streak_type = "רווחים" if last_sign > 0 else "הפסדים"
+                streak_dir = last_sign
                 for v in reversed(vals):
                     if (last_sign > 0 and v > 0) or (last_sign < 0 and v < 0):
                         streak_count += 1
                     else:
                         break
 
-    now_ym = datetime.now().strftime("%Y-%m")
+    now_dt = datetime.now()
+    now_ym = now_dt.strftime("%Y-%m")
+    month_label = now_dt.strftime("%b %Y")
     month_closed_pnl = 0.0
+    month_closed_cnt = 0
     month_opened_cnt = 0
     month_deposits = 0.0
     if not closed_df.empty and "close_date" in closed_df.columns:
         m_c = closed_df[closed_df["close_date"].astype(str).str.startswith(now_ym)]
         month_closed_pnl = float(m_c["net_pnl"].fillna(0).sum())
+        month_closed_cnt = len(m_c)
     if not df_trades.empty and "entry_date" in df_trades.columns:
         m_o = df_trades[df_trades["entry_date"].astype(str).str.startswith(now_ym)]
         month_opened_cnt = len(m_o)
@@ -507,6 +540,7 @@ def compute_dashboard_metrics(
         "consistency_score": consistency_score,
         "plan_rate": plan_rate,
         "plan_yes": plan_yes,
+        "plan_no": plan_no,
         "plan_total": plan_total,
         "avg_win": avg_win,
         "avg_loss": avg_loss,
@@ -516,8 +550,10 @@ def compute_dashboard_metrics(
         "worst_sym": worst_sym,
         "open_positions_list": sorted(open_positions_list, key=lambda x: abs(x["pnl"]), reverse=True),
         "streak_count": streak_count,
-        "streak_type": streak_type,
+        "streak_dir": streak_dir,
+        "month_label": month_label,
         "month_closed_pnl": month_closed_pnl,
+        "month_closed_cnt": month_closed_cnt,
         "month_opened_cnt": month_opened_cnt,
         "month_deposits": month_deposits,
     }
@@ -914,7 +950,6 @@ def render_journal_home() -> None:
     # === ROW 2A: Win Rate (with Arc Gauge), Total Trades, Current Exposure (with Ratio & Progress Bar) ===
     r2_c1, r2_c2, r2_c3 = st.columns(3)
 
-    # Card 2.1: Win Rate with Semicircular SVG Gauge
     with r2_c1:
         wr_val = max(0.0, min(100.0, float(m["win_rate"])))
         wr_color = "#10B981" if wr_val >= 50 else "#F59E0B"
@@ -939,7 +974,6 @@ def render_journal_home() -> None:
             """
         )
 
-    # Card 2.2: Total Trades
     with r2_c2:
         _html(
             f"""
@@ -954,7 +988,6 @@ def render_journal_home() -> None:
             """
         )
 
-    # Card 2.3: Current Exposure with Dollar Ratio + Blue Progress Bar
     with r2_c3:
         exp_val = max(0.0, float(m["exposure_pct"]))
         exp_bar_w = min(100.0, exp_val)
@@ -975,10 +1008,9 @@ def render_journal_home() -> None:
             """
         )
 
-    # === ROW 2B: Consistency Score, Avg Trade P/L (Split + Dual Bar), Best/Worst Trade (Split + Ticker Pills) ===
+    # === ROW 2B: Consistency Score, Avg Trade P/L, Best/Worst Trade ===
     r2_c4, r2_c5, r2_c6 = st.columns(3)
 
-    # Card 2.4: Consistency Score
     with r2_c4:
         cons_color = "#10B981" if m["consistency_score"] >= 75 else "#38BDF8"
         _html(
@@ -993,7 +1025,6 @@ def render_journal_home() -> None:
             """
         )
 
-    # Card 2.5: Avg Trade P/L (Split Layout + Green/Red Comparison Bar)
     with r2_c5:
         aw = float(m["avg_win"])
         al = abs(float(m["avg_loss"]))
@@ -1022,7 +1053,6 @@ def render_journal_home() -> None:
             """
         )
 
-    # Card 2.6: Best / Worst Trade (Split Layout + Ticker Pill Badges)
     with r2_c6:
         b_sym = html.escape(str(m["best_sym"]))
         w_sym = html.escape(str(m["worst_sym"]))
@@ -1053,67 +1083,115 @@ def render_journal_home() -> None:
     # === ROW 3: Charts ===
     render_charts_row(df_trades, df_cash)
 
-    # === ROW 4: Operational Pulse Cards ===
-    p1, p2, p3 = st.columns([1.4, 1.0, 1.0])
+    # === ROW 4: Equal-Height HTML Grid for Active Positions, Streak & Discipline, Monthly Pulse ===
+    # 1. Active Positions Pulse
+    top_pos = m["open_positions_list"][:4]
+    if top_pos:
+        pos_rows_html = ""
+        for pos in top_pos:
+            c_p = "#10B981" if pos["pnl"] >= 0 else "#EF4444"
+            q_val = pos["qty"]
+            q_str = f"{int(q_val)} מניה" if q_val == 1 else (f"{int(q_val)} מניות" if float(q_val).is_integer() else f"{q_val:.2f} מניות")
+            sl_str = f"SL: ${pos['stop_loss']:,.2f}" if pos["stop_loss"] is not None else f"שער חי: ${pos['live_p']:,.2f}"
+            pos_rows_html += (
+                f'<div class="jh-pulse-row">'
+                f'<div><span style="font-weight:800; color:#F8FAFC; letter-spacing:0.4px;">{pos["symbol"]}</span>'
+                f'<span style="color:#64748B; font-size:0.78rem; margin-right:8px;">{q_str}</span></div>'
+                f'<span dir="ltr" style="font-weight:800; color:{c_p}; font-size:0.88rem;">{pos["pnl"]:+,.2f}$ ({pos["pnl_pct"]:+.1f}%)</span>'
+                f'<span dir="ltr" style="color:#64748B; font-size:0.78rem;">{sl_str}</span>'
+                f'</div>'
+            )
+    else:
+        pos_rows_html = '<div class="jh-sub">אין פוזיציות פתוחות כרגע.</div>'
 
-    with p1:
-        top_pos = m["open_positions_list"][:4]
-        rows_html = ""
-        if top_pos:
-            for pos in top_pos:
-                c_p = "#10B981" if pos["pnl"] >= 0 else "#EF4444"
-                rows_html += (
-                    f'<div class="jh-pulse-row">'
-                    f'<span style="font-weight:800; color:#F8FAFC;">{pos["symbol"]}</span>'
-                    f'<span style="color:#94A3B8; direction:ltr;">${pos["live_p"]:,.2f}</span>'
-                    f'<span style="font-weight:800; color:{c_p}; direction:ltr;">{pos["pnl"]:+,.2f}$ ({pos["pnl_pct"]:+.1f}%)</span>'
-                    f'</div>'
-                )
-        else:
-            rows_html = '<div class="jh-sub">אין פוזיציות פתוחות כרגע.</div>'
+    # 2. Streak & Discipline
+    sc = m["streak_count"]
+    sdir = m["streak_dir"]
+    if sdir == 1:
+        st_color = "#10B981"
+        st_text = f"{sc} רווח ברצף" if sc == 1 else f"{sc} רווחים ברצף"
+        badge_style = "color:#10B981; background:rgba(16,185,129,0.12); border:1px solid rgba(16,185,129,0.35);"
+        badge_txt = "מומנטום חיובי"
+    elif sdir == -1:
+        st_color = "#EF4444"
+        st_text = f"{sc} הפסד ברצף" if sc == 1 else f"{sc} הפסדים ברצף"
+        badge_style = "color:#EF4444; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.35);"
+        badge_txt = "בקרת סיכון"
+    else:
+        st_color = "#94A3B8"
+        st_text = "אין רצף פעיל"
+        badge_style = "color:#94A3B8; background:rgba(148,163,184,0.12); border:1px solid rgba(148,163,184,0.3);"
+        badge_txt = "מאוזן"
 
-        _html(
-            f"""
-            <div class="jh-card" style="height:100%;">
-                <div class="jh-title">פוזיציות פתוחות מובילות - Active Positions Pulse</div>
-                {rows_html}
+    pr_val = max(0.0, min(100.0, float(m["plan_rate"])))
+    pr_color = "#10B981" if pr_val >= 75 else "#F59E0B"
+
+    # 3. Monthly Pulse
+    m_color = "#10B981" if m["month_closed_pnl"] >= 0 else "#EF4444"
+    m_dep_str = f"+${m['month_deposits']:,.2f}" if m["month_deposits"] > 0 else "$0.00"
+
+    _html(
+        f"""
+        <div class="jh-bottom-grid">
+            <div class="jh-card">
+                <div class="jh-title" style="margin-bottom:10px;">פוזיציות פתוחות מובילות - Active Positions Pulse</div>
+                <div>{pos_rows_html}</div>
             </div>
-            """
-        )
 
-    with p2:
-        st_color = "#10B981" if m["streak_type"] == "רווחים" else ("#EF4444" if m["streak_type"] == "הפסדים" else "#94A3B8")
-        _html(
-            f"""
-            <div class="jh-card" style="height:100%;">
-                <div class="jh-title">רצף נוכחי ומשמעת - Streak & Discipline</div>
-                <div class="jh-value" style="color:{st_color}; font-size:1.42rem;">
-                    <span>{m['streak_count']} {m['streak_type']} ברצף</span>
+            <div class="jh-card">
+                <div class="jh-title" style="margin-bottom:10px;">רצף נוכחי ומשמעת - Streak & Discipline</div>
+                <div class="jh-sub-box" style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                    <div>
+                        <div class="jh-mini-lbl">רצף סגירות אחרון</div>
+                        <div style="font-size:1.3rem; font-weight:800; color:{st_color}; font-family:{APP_FONT} !important;">
+                            {st_text}
+                        </div>
+                    </div>
+                    <span style="font-size:0.78rem; font-weight:700; padding:4px 10px; border-radius:8px; white-space:nowrap; {badge_style}">
+                        {badge_txt}
+                    </span>
                 </div>
-                <div class="jh-sub" style="margin-top:8px;">
-                    שיעור עמידה בכללי התוכנית: <b style="color:#F8FAFC;">{m['plan_rate']:.1f}%</b><br>
-                    מבוסס על עסקאות סגורות מתועדות
+                <div style="margin-top:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+                        <span style="font-size:0.8rem; color:#94A3B8; font-weight:600;">עמידה בכללי התוכנית</span>
+                        <span dir="ltr" style="font-size:0.86rem; font-weight:800; color:{pr_color};">{pr_val:.1f}%</span>
+                    </div>
+                    <div class="jh-bar-track">
+                        <div style="width:{pr_val:.1f}%; height:100%; background:{pr_color}; border-radius:999px;"></div>
+                    </div>
+                    <div class="jh-sub" style="margin-top:6px;">
+                        {m['plan_yes']} עסקאות בוצעו לפי התוכנית מול {m['plan_no']} חריגות
+                    </div>
                 </div>
             </div>
-            """
-        )
 
-    with p3:
-        m_color = "#10B981" if m["month_closed_pnl"] >= 0 else "#EF4444"
-        _html(
-            f"""
-            <div class="jh-card" style="height:100%;">
-                <div class="jh-title">דופק חודשי - Monthly Pulse</div>
-                <div class="jh-value" style="color:{m_color}; font-size:1.44rem;">
-                    {_ltr_num(_fmt_usd(m['month_closed_pnl'], signed=True))}
+            <div class="jh-card">
+                <div class="jh-title-row" style="margin-bottom:10px;">
+                    <div class="jh-title">דופק חודשי - Monthly Pulse</div>
+                    <span dir="ltr" style="font-size:0.8rem; font-weight:700; color:#64748B;">{m['month_label']}</span>
                 </div>
-                <div class="jh-sub" style="margin-top:8px;">
-                    עסקאות שנפתחו החודש: <b style="color:#F8FAFC;">{m['month_opened_cnt']}</b><br>
-                    הפקדות החודש: <b style="color:#38BDF8;">{_ltr_num(_fmt_usd(m['month_deposits']))}</b>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <div class="jh-sub-box">
+                        <div class="jh-mini-lbl">הפקדות החודש</div>
+                        <div style="font-size:1.26rem; font-weight:800; color:#38BDF8; direction:ltr; text-align:right;">
+                            {m_dep_str}
+                        </div>
+                    </div>
+                    <div class="jh-sub-box">
+                        <div class="jh-mini-lbl">רווח / הפסד החודש</div>
+                        <div style="font-size:1.26rem; font-weight:800; color:{m_color}; direction:ltr; text-align:right;">
+                            {_fmt_usd(m['month_closed_pnl'], signed=True)}
+                        </div>
+                    </div>
+                </div>
+                <div class="jh-sub-box" style="margin-top:10px; padding:9px 12px; display:flex; justify-content:space-between; align-items:center; font-size:0.8rem;">
+                    <span style="color:#64748B;">פעילות בחודש נוכחי</span>
+                    <span style="color:#CBD5E1; font-weight:700;">{m['month_opened_cnt']} פוזיציות נפתחו · {m['month_closed_cnt']} נסגרו</span>
                 </div>
             </div>
-            """
-        )
+        </div>
+        """
+    )
 
 
 def main() -> None:
