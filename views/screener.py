@@ -98,7 +98,6 @@ def render_top_controls(all_symbols: list[str]) -> tuple[bool, int]:
 
 # === [SEC-03: ADVANCED FILTER & SORT ENGINE (COLLAPSED BY DEFAULT)] ===
 def render_filters_and_sort(df: pd.DataFrame) -> pd.DataFrame:
-    # Count active filters so the collapsed header reflects active state
     active_count = 0
     if st.session_state.get("flt_search", "").strip():
         active_count += 1
@@ -370,13 +369,80 @@ def render_filters_and_sort(df: pd.DataFrame) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
-# === [SEC-04: STOCK RECTANGLE CARDS GRID] ===
+# === [SEC-04: STOCK RECTANGLE CARDS GRID (4 PER ROW + WRAPPING NAMES + EXPANDED HEIGHT)] ===
 def render_cards_grid(df_filtered: pd.DataFrame) -> None:
     if df_filtered.empty:
         st.warning("לא נמצאו מניות התואמות לסינון שנבחר.")
         return
 
-    page_size = 30
+    st.markdown(
+        """
+        <style>
+        .stock-card {
+            min-height: 224px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            padding: 13px 13px 12px 13px !important;
+        }
+        .stock-card-top {
+            display: flex !important;
+            justify-content: space-between !important;
+            align-items: flex-start !important;
+            gap: 8px !important;
+            margin-bottom: 10px !important;
+        }
+        .stock-identity {
+            display: flex !important;
+            align-items: flex-start !important;
+            gap: 9px !important;
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+            padding-left: 4px !important;
+        }
+        .stock-name {
+            font-size: 0.85rem !important;
+            font-weight: 700 !important;
+            line-height: 1.24 !important;
+            color: #F8FAFC !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            display: -webkit-box !important;
+            -webkit-line-clamp: 2 !important;
+            -webkit-box-orient: vertical !important;
+            min-height: 2.12rem !important;
+            max-height: 2.12rem !important;
+        }
+        .stock-ticker {
+            font-size: 0.74rem !important;
+            margin-top: 2px !important;
+        }
+        .stock-price-block {
+            flex-shrink: 0 !important;
+            text-align: left !important;
+        }
+        .stock-pct {
+            font-size: 0.88rem !important;
+        }
+        .stock-price {
+            font-size: 0.84rem !important;
+        }
+        .signal-inner-box {
+            min-height: 132px !important;
+            flex: 1 1 auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            padding: 11px 12px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    page_size = 32
     total_pages = max(1, (len(df_filtered) + page_size - 1) // page_size)
     if total_pages > 1:
         pg_num = st.number_input(
@@ -393,7 +459,7 @@ def render_cards_grid(df_filtered: pd.DataFrame) -> None:
     start_idx = (pg_num - 1) * page_size
     page_df = df_filtered.iloc[start_idx : start_idx + page_size]
 
-    cols_per_row = 3
+    cols_per_row = 4
     rows_list = [page_df.iloc[i : i + cols_per_row] for i in range(0, len(page_df), cols_per_row)]
 
     for row_chunk in rows_list:
@@ -401,7 +467,7 @@ def render_cards_grid(df_filtered: pd.DataFrame) -> None:
         for col_idx, (_, r) in enumerate(row_chunk.iterrows()):
             sym = str(r["symbol"])
             comp_name = html.escape(str(r.get("company_name") or sym))
-            logo_html = render_logo_html(sym, r.get("logo_url"), size=38)
+            logo_html = render_logo_html(sym, r.get("logo_url"), size=36)
 
             price_val = r.get("display_price")
             price_str = f"${price_val:,.2f}" if pd.notna(price_val) else "--"
@@ -416,7 +482,7 @@ def render_cards_grid(df_filtered: pd.DataFrame) -> None:
                         <div class="stock-card-top">
                             <div class="stock-identity">
                                 {logo_html}
-                                <div style="min-width:0;">
+                                <div style="flex:1; min-width:0;">
                                     <div class="stock-name" title="{comp_name}">{comp_name}</div>
                                     <div class="stock-ticker">{html.escape(sym)}</div>
                                 </div>
@@ -427,13 +493,17 @@ def render_cards_grid(df_filtered: pd.DataFrame) -> None:
                             </div>
                         </div>
                         <div class="signal-inner-box">
-                            <div class="signal-inner-label">סטטוס איתות</div>
-                            <div class="signal-inner-status">ממתין לאיתות</div>
-                            <div class="signal-score-row">
-                                <span>ציון</span>
-                                <span class="ltr-num">--</span>
+                            <div>
+                                <div class="signal-inner-label">סטטוס איתות</div>
+                                <div class="signal-inner-status">ממתין לאיתות</div>
                             </div>
-                            <div class="signal-bar-bg"></div>
+                            <div>
+                                <div class="signal-score-row">
+                                    <span>ציון</span>
+                                    <span class="ltr-num">--</span>
+                                </div>
+                                <div class="signal-bar-bg"></div>
+                            </div>
                         </div>
                     </div>
                     """,
