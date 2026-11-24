@@ -30,11 +30,7 @@ def load_market_dataframe() -> pd.DataFrame:
     sb = get_supabase_client()
 
     wl_resp = sb.table("watchlist").select("symbol, source, is_active").eq("is_active", True).execute()
-    prof_resp = (
-        sb.table("company_profiles")
-        .select("symbol, company_name, exchange, sector, industry, sub_industry, short_summary, logo_url, manual_levels")
-        .execute()
-    )
+    prof_resp = sb.table("company_profiles").select("*").execute()
     snap_resp = sb.table("stocks_snapshot").select("*").execute()
 
     df_wl = pd.DataFrame(wl_resp.data or [])
@@ -120,12 +116,78 @@ def refresh_live_prices_tv(symbols: list[str]) -> int:
     return len(updates)
 
 
-# === [SEC-04: MANUAL SUPPORT / RESISTANCE LEVELS] ===
+# === [SEC-04: MANUAL SUPPORT / RESISTANCE LEVELS & BIDIRECTIONAL SETUP SYNC] ===
 def save_manual_levels(symbol: str, levels: list[dict]) -> None:
     """Saves user-defined support/resistance levels into company_profiles.manual_levels."""
     sb = get_supabase_client()
     sb.table("company_profiles").update({"manual_levels": levels}).eq("symbol", symbol).execute()
     clear_market_cache()
+
+
+def sync_setup_pattern(
+    symbol: str,
+    setup_pattern: str | None,
+    trade_id: int | None = None,
+) -> None:
+    """Bidirectionally syncs Setup pattern between company_profiles (Analytics) and trade_journal (Journal)."""
+    sb = get_supabase_client()
+    clean_sym = symbol.split(":")[-1].strip().upper()
+    clean_setup = setup_pattern.strip() if setup_pattern and setup_pattern.strip() and setup_pattern != "ללא Setup" else None
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # 1. Update company_profiles (Analytics Deep Dive)
+    try:
+        sb.table("company_profiles").update({"setup_pattern": clean_setup}).eq("symbol", clean_sym).execute()
+    except Exception:
+        pass
+
+    # 2. Update trade_journal (Journal)
+    try:
+        if trade_id is not None:
+            sb.table("trade_journal").update(
+                {"setup_pattern": clean_setup, "updated_at": now_iso}
+            ).eq("id", trade_id).execute()
+
+        # Also keep any open positions for this symbol synchronized
+        open_rows = (
+            sb.table("trade_journal")
+            .select("id")
+            .eq("symbol", clean_sym)
+            .eq("status", "Open")
+            .execute()
+            .data
+            or []
+        )
+        if open_rows:
+            sb.table("trade_journal").update(
+                {"setup_pattern": clean_setup, "updated_at": now_iso}
+            ).eq("symbol", clean_sym).eq("status", "Open").execute()
+        elif trade_id is None:
+            # If no open trade exists, sync the most recent trade for this symbol if any
+            latest = (
+                sb.table("trade_journal")
+                .select("id")
+                .eq("symbol", clean_sym)
+                .order("entry_date", desc=True)
+                .order("id", desc=True)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if latest:
+                sb.table("trade_journal").update(
+                    {"setup_pattern": clean_setup, "updated_at": now_iso}
+                ).eq("id", latest[0]["id"]).execute()
+    except Exception:
+        pass
+
+    clear_market_cache()
+    try:
+        from journal_helpers import clear_journal_cache
+        clear_journal_cache()
+    except Exception:
+        pass
 
 
 # === [SEC-05: NEW STOCKS DETECTION & FULL ON-DEMAND SYNC] ===
