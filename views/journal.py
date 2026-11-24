@@ -12,6 +12,7 @@ from journal_helpers import (
     insert_trade,
     insert_cash_tx,
 )
+from views.journal_positions import render_positions_and_log_page
 
 APP_FONT = "'Assistant', 'Rubik', sans-serif"
 
@@ -1197,8 +1198,7 @@ def render_journal_home() -> None:
 def main() -> None:
     active = st.session_state.get("active_page", "יומן מסחר - עמוד הבית")
     if active == "יומן מסחר - פוזיציות ויומן עסקאות":
-        st.markdown("### פוזיציות ויומן עסקאות")
-        st.info("עמוד זה נמצא בהכנה — נבנה אותו בשלב הבא מיד לאחר אישור עמוד הבית.")
+        render_positions_and_log_page()
     else:
         render_journal_home()
 
