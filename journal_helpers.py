@@ -1,4 +1,4 @@
-# === [SEC-01: IMPORTS & INDICATOR OPTION CATALOGS] ===
+# === [SEC-01: IMPORTS & INDICATOR / SETUP OPTION CATALOGS] ===
 import os
 import math
 from datetime import datetime, timezone
@@ -7,7 +7,26 @@ import pandas as pd
 import requests
 import yfinance as yf
 import streamlit as st
-from db import get_supabase_client
+from db import get_supabase_client, sync_setup_pattern
+
+SETUP_OPTIONS = [
+    "ללא Setup",
+    "Darvas Box",
+    "Bearish-to-Bullish Reversal",
+    "Cup and Handle",
+    "Bull Flag",
+    "Pennant",
+    "Double Bottom",
+    "Inverse Head & Shoulders",
+    "Ascending Triangle",
+    "Symmetrical Triangle",
+    "Falling Wedge",
+    "VCP (Volatility Contraction)",
+    "Breakout from Base",
+    "Pullback to Moving Average",
+    "Channel Breakout",
+    "Gap & Go",
+]
 
 VOLUME_TREND_OPTIONS = [
     "לחץ קונים (איסוף)",
@@ -252,7 +271,6 @@ def compute_live_entry_indicators(symbol: str) -> dict:
         opens = df["Open"]
         vols = df["Volume"]
 
-        # 1. MACD (12, 26, 9)
         ema12 = closes.ewm(span=12, adjust=False).mean()
         ema26 = closes.ewm(span=26, adjust=False).mean()
         macd_line = ema12 - ema26
@@ -274,7 +292,6 @@ def compute_live_entry_indicators(symbol: str) -> dict:
         else:
             out["macd_status"] = "מומנטום דובי פעיל (אדום מתחזק)"
 
-        # 2. CCI (20)
         tp = (highs + lows + closes) / 3.0
         sma_tp = tp.rolling(20).mean()
         mad_tp = tp.rolling(20).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True)
@@ -296,7 +313,6 @@ def compute_live_entry_indicators(symbol: str) -> dict:
             else:
                 out["cci_status"] = "חוצה 0 מעלה (מעבר למומנטום חיובי)"
 
-        # 3. Volume Trend & Struggle
         hi = float(highs.iloc[-1])
         lo = float(lows.iloc[-1])
         cl = float(closes.iloc[-1])
@@ -317,7 +333,6 @@ def compute_live_entry_indicators(symbol: str) -> dict:
         else:
             out["volume_trend"] = "נפח שקט (נייטרלי)"
 
-        # 4. Wilder RSI (14)
         delta = closes.diff()
         gain = delta.clip(lower=0).ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
         loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, min_periods=14, adjust=False).mean()
@@ -416,16 +431,32 @@ def clear_journal_cache() -> None:
     load_journal_data.clear()
 
 
+def _sanitize_trade_payload(payload: dict) -> dict:
+    """Drops unknown columns safely if DB migration hasn't been executed yet."""
+    df_t, _ = load_journal_data()
+    if df_t.empty:
+        return dict(payload)
+    valid_cols = set(df_t.columns)
+    return {k: v for k, v in payload.items() if k in valid_cols}
+
+
 def insert_trade(payload: dict) -> None:
     sb = get_supabase_client()
-    sb.table("trade_journal").insert(payload).execute()
+    clean_p = _sanitize_trade_payload(payload)
+    sb.table("trade_journal").insert(clean_p).execute()
+    if "setup_pattern" in payload and payload.get("symbol"):
+        sync_setup_pattern(str(payload["symbol"]), payload.get("setup_pattern"))
     clear_journal_cache()
 
 
 def update_trade(trade_id: int, payload: dict) -> None:
     sb = get_supabase_client()
-    payload["updated_at"] = datetime.now(timezone.utc).isoformat()
-    sb.table("trade_journal").update(payload).eq("id", trade_id).execute()
+    payload_copy = dict(payload)
+    payload_copy["updated_at"] = datetime.now(timezone.utc).isoformat()
+    clean_p = _sanitize_trade_payload(payload_copy)
+    sb.table("trade_journal").update(clean_p).eq("id", trade_id).execute()
+    if "setup_pattern" in payload and payload.get("symbol"):
+        sync_setup_pattern(str(payload["symbol"]), payload.get("setup_pattern"), trade_id=trade_id)
     clear_journal_cache()
 
 
@@ -490,7 +521,6 @@ def import_journal_csv(df_csv: pd.DataFrame) -> tuple[int, int]:
         entry_date_str = dt_parsed.strftime("%Y-%m-%d")
         key = (entry_date_str, sym, round(ep, 2), round(qty, 4))
 
-        # Check Cash deposit column
         cash_val = _clean_float(r.get("Cash"), 2)
         if cash_val is not None and cash_val > 0:
             c_key = (entry_date_str, round(cash_val, 2))
@@ -522,6 +552,7 @@ def import_journal_csv(df_csv: pd.DataFrame) -> tuple[int, int]:
             "symbol": sym,
             "company_name": str(r.get("Company Name") or "").strip() or None,
             "direction": str(r.get("Direction") or "Long").strip(),
+            "setup_pattern": str(r.get("Setup") or "").strip() or None,
             "entry_price": ep,
             "quantity": qty,
             "purchase_amount": purchase_amt,
@@ -571,7 +602,7 @@ def import_journal_csv(df_csv: pd.DataFrame) -> tuple[int, int]:
             "rel_vol_30d": _clean_float(r.get("Rel Vol 30D"), 2),
             "signal_status": str(r.get("Signal") or "").strip() or None,
         }
-        trades_to_insert.append(row_payload)
+        trades_to_insert.append(_sanitize_trade_payload(row_payload))
 
     if trades_to_insert:
         for i in range(0, len(trades_to_insert), 50):
