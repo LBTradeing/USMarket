@@ -1,5 +1,6 @@
 # === [SEC-01: IMPORTS & STYLING HELPERS] ===
 import html
+import math
 from datetime import date, datetime
 import pandas as pd
 import plotly.graph_objects as go
@@ -11,6 +12,8 @@ from journal_helpers import (
     insert_trade,
     insert_cash_tx,
 )
+
+APP_FONT = "'Assistant', 'Rubik', sans-serif"
 
 
 def _html(raw: str) -> None:
@@ -30,51 +33,175 @@ def _fmt_usd(val: float | None, signed: bool = False, decimals: int = 2) -> str:
 
 
 def _ltr_num(text: str) -> str:
-    return f'<span dir="ltr" style="display:inline-block;">{text}</span>'
+    return f'<span dir="ltr" style="display:inline-block; font-family:{APP_FONT} !important;">{text}</span>'
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_live_usd_ils() -> float:
+    try:
+        import yfinance as yf
+        hist = yf.Ticker("ILS=X").history(period="5d")
+        if not hist.empty and "Close" in hist.columns:
+            val = float(hist["Close"].dropna().iloc[-1])
+            if 2.5 <= val <= 5.5:
+                return round(val, 3)
+    except Exception:
+        pass
+    return 3.65
 
 
 def inject_journal_home_css() -> None:
     _html(
-        """
+        f"""
         <style>
-        .jh-card {
+        .jh-card, .jh-card * {{
+            font-family: {APP_FONT} !important;
+        }}
+        .jh-card {{
             background: linear-gradient(180deg, #111622 0%, #0D111A 100%);
             border: 1px solid #1E2638;
             border-radius: 16px;
-            padding: 15px 18px;
+            padding: 16px 18px;
             margin-bottom: 10px;
+            min-height: 126px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
             direction: rtl;
             text-align: right;
             transition: border-color 0.2s ease;
-        }
-        .jh-card:hover {
+        }}
+        .jh-card-r2 {{
+            min-height: 142px;
+        }}
+        .jh-card:hover {{
             border-color: #334155;
-        }
-        .jh-title {
-            font-size: 0.83rem;
-            font-weight: 700;
-            color: #94A3B8;
-            margin-bottom: 7px;
+        }}
+        .jh-title-row {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }}
+        .jh-title {{
+            font-family: {APP_FONT} !important;
+            font-size: 0.98rem !important;
+            font-weight: 700 !important;
+            color: #CBD5E1 !important;
             text-align: right;
             direction: rtl;
-        }
-        .jh-value {
-            font-size: 1.5rem;
+            line-height: 1.3;
+        }}
+        .jh-fx-badge {{
+            font-family: {APP_FONT} !important;
+            font-size: 0.74rem;
+            font-weight: 700;
+            color: #38BDF8;
+            background: rgba(56, 189, 248, 0.12);
+            border: 1px solid rgba(56, 189, 248, 0.28);
+            border-radius: 999px;
+            padding: 2px 9px;
+            direction: ltr;
+            white-space: nowrap;
+        }}
+        .jh-value {{
+            font-family: {APP_FONT} !important;
+            font-size: 1.54rem;
             font-weight: 800;
             line-height: 1.25;
             text-align: right !important;
             direction: rtl;
             width: 100%;
-            margin-bottom: 5px;
-        }
-        .jh-sub {
-            font-size: 0.77rem;
+            margin-bottom: 4px;
+        }}
+        .jh-ils-inline {{
+            font-family: {APP_FONT} !important;
+            font-size: 0.96rem;
+            font-weight: 700;
+            color: #38BDF8;
+            margin-right: 10px;
+            direction: ltr;
+            display: inline-block;
+        }}
+        .jh-sub {{
+            font-family: {APP_FONT} !important;
+            font-size: 0.8rem;
             color: #64748B;
             line-height: 1.4;
             text-align: right;
             direction: rtl;
-        }
-        .jh-pulse-row {
+        }}
+        /* Split cells inside Avg Trade & Best/Worst cards */
+        .jh-split-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            align-items: center;
+            margin: 4px 0 6px 0;
+        }}
+        .jh-split-right {{
+            border-left: 1px solid #1E2638;
+            padding-left: 10px;
+            text-align: right;
+        }}
+        .jh-split-left {{
+            padding-right: 4px;
+            text-align: right;
+        }}
+        .jh-mini-lbl {{
+            font-size: 0.75rem;
+            color: #64748B;
+            margin-bottom: 2px;
+        }}
+        .jh-split-val {{
+            font-size: 1.28rem;
+            font-weight: 800;
+            line-height: 1.2;
+        }}
+        .jh-ticker-pill {{
+            font-size: 0.74rem;
+            font-weight: 800;
+            padding: 2px 8px;
+            border-radius: 7px;
+            letter-spacing: 0.4px;
+            direction: ltr;
+            display: inline-block;
+        }}
+        .jh-pill-win {{
+            color: #10B981;
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.35);
+        }}
+        .jh-pill-loss {{
+            color: #EF4444;
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+        }}
+        /* Progress bars */
+        .jh-bar-track {{
+            width: 100%;
+            height: 7px;
+            background: #1A2234;
+            border-radius: 999px;
+            overflow: hidden;
+            margin-top: 4px;
+        }}
+        .jh-bar-fill-blue {{
+            height: 100%;
+            background: linear-gradient(90deg, #2563EB, #38BDF8);
+            border-radius: 999px;
+        }}
+        .jh-split-bar {{
+            display: flex;
+            width: 100%;
+            height: 7px;
+            border-radius: 999px;
+            overflow: hidden;
+            gap: 2px;
+            margin-top: 4px;
+        }}
+        .jh-pulse-row {{
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -83,22 +210,20 @@ def inject_journal_home_css() -> None:
             border: 1px solid #1A2234;
             border-radius: 10px;
             margin-bottom: 6px;
-            font-size: 0.83rem;
+            font-size: 0.85rem;
             direction: rtl;
-        }
-        /* עיצוב מסגרות הגרפים כריבועים מעוגלים */
-        div[data-testid="stVerticalBlockBorderWrapper"] {
+        }}
+        div[data-testid="stVerticalBlockBorderWrapper"] {{
             background: linear-gradient(180deg, #111622 0%, #0D111A 100%) !important;
             border: 1px solid #1E2638 !important;
             border-radius: 16px !important;
-            padding: 12px 14px 6px 14px !important;
-        }
-        /* נעילת שדה Ticker לאותיות גדולות */
-        div[data-testid="stDialog"] input[type="text"] {
+            padding: 14px 16px 8px 16px !important;
+        }}
+        div[data-testid="stDialog"] input[type="text"] {{
             text-transform: uppercase !important;
             font-weight: 700 !important;
             letter-spacing: 0.8px !important;
-        }
+        }}
         </style>
         """
     )
@@ -257,6 +382,7 @@ def compute_dashboard_metrics(
     df_trades: pd.DataFrame,
     df_cash: pd.DataFrame,
     price_map: dict[str, float],
+    usd_ils: float,
 ) -> dict:
     total_deposits = (
         float(df_cash[df_cash["tx_type"] == "Deposit"]["amount_usd"].sum())
@@ -298,6 +424,7 @@ def compute_dashboard_metrics(
 
     available_cash = total_deposits + realized_pnl - invested_open
     account_value = available_cash + invested_open + open_pnl
+    account_value_ils = round(account_value * usd_ils, 0)
     exposure_pct = (invested_open / account_value * 100.0) if account_value > 0 else 0.0
 
     wins_df = closed_df[closed_df["net_pnl"].fillna(0) > 0] if not closed_df.empty else pd.DataFrame()
@@ -318,7 +445,10 @@ def compute_dashboard_metrics(
     worst_sym = str(closed_df.loc[closed_df["net_pnl"].idxmin(), "symbol"]) if n_closed > 0 else "--"
 
     plan_valid = df_trades["according_to_plan"].dropna() if not df_trades.empty else pd.Series(dtype=str)
-    plan_rate = float((plan_valid == "Yes").mean() * 100.0) if len(plan_valid) > 0 else 0.0
+    plan_yes = int((plan_valid == "Yes").sum())
+    plan_total = int(len(plan_valid))
+    plan_rate = float(plan_yes / plan_total * 100.0) if plan_total > 0 else 0.0
+
     if n_closed >= 2:
         std_pnl = float(closed_df["net_pnl"].std())
         mean_abs = float(closed_df["net_pnl"].abs().mean())
@@ -358,6 +488,8 @@ def compute_dashboard_metrics(
 
     return {
         "account_value": account_value,
+        "account_value_ils": account_value_ils,
+        "usd_ils": usd_ils,
         "invested_open": invested_open,
         "available_cash": available_cash,
         "realized_pnl": realized_pnl,
@@ -374,6 +506,8 @@ def compute_dashboard_metrics(
         "exposure_pct": exposure_pct,
         "consistency_score": consistency_score,
         "plan_rate": plan_rate,
+        "plan_yes": plan_yes,
+        "plan_total": plan_total,
         "avg_win": avg_win,
         "avg_loss": avg_loss,
         "best_val": best_val,
@@ -389,21 +523,115 @@ def compute_dashboard_metrics(
     }
 
 
-# === [SEC-04: CHARTS - EQUITY CURVE (RIGHT) & DAILY P/L (LEFT)] ===
+# === [SEC-04: EQUITY MILESTONES BUILDER & CHARTS] ===
+def _build_equity_milestones(events: list[dict], target_points: int = 24) -> list[dict]:
+    if not events:
+        return []
+
+    ev_df = pd.DataFrame(events).sort_values("dt")
+    atomic: list[dict] = []
+    running_eq = 0.0
+
+    for dt_val, grp in ev_df.groupby("dt"):
+        dep_d = float(grp[grp["kind"] == "deposit"]["delta"].sum())
+        trd_d = float(grp[grp["kind"] == "trade"]["delta"].sum())
+        if dep_d != 0:
+            running_eq += dep_d
+            atomic.append(
+                {
+                    "dt": dt_val,
+                    "kind": "deposit",
+                    "delta": round(dep_d, 2),
+                    "y": round(running_eq, 2),
+                }
+            )
+        if trd_d != 0 or dep_d == 0:
+            running_eq += trd_d
+            atomic.append(
+                {
+                    "dt": dt_val,
+                    "kind": "profit" if trd_d >= 0 else "loss",
+                    "delta": round(trd_d, 2),
+                    "y": round(running_eq, 2),
+                }
+            )
+
+    if len(atomic) <= target_points:
+        return [
+            {
+                "short_lbl": item["dt"].strftime("%d/%m"),
+                "hover_date": item["dt"].strftime("%d/%m/%Y"),
+                "kind": item["kind"],
+                "delta": item["delta"],
+                "y": item["y"],
+            }
+            for item in atomic
+        ]
+
+    segments: list[list[dict]] = []
+    curr_trade_run: list[dict] = []
+    for item in atomic:
+        if item["kind"] == "deposit":
+            if curr_trade_run:
+                segments.append(curr_trade_run)
+                curr_trade_run = []
+            segments.append([item])
+        else:
+            curr_trade_run.append(item)
+    if curr_trade_run:
+        segments.append(curr_trade_run)
+
+    n_deposits = sum(1 for s in segments if s[0]["kind"] == "deposit")
+    total_trades = sum(len(s) for s in segments if s[0]["kind"] != "deposit")
+    available_trade_slots = max(8, target_points - n_deposits)
+    bucket_size = max(1, math.ceil(total_trades / available_trade_slots))
+
+    milestones: list[dict] = []
+    for seg in segments:
+        if seg[0]["kind"] == "deposit":
+            it = seg[0]
+            milestones.append(
+                {
+                    "short_lbl": it["dt"].strftime("%d/%m"),
+                    "hover_date": it["dt"].strftime("%d/%m/%Y"),
+                    "kind": "deposit",
+                    "delta": it["delta"],
+                    "y": it["y"],
+                }
+            )
+        else:
+            for idx in range(0, len(seg), bucket_size):
+                chunk = seg[idx : idx + bucket_size]
+                agg_delta = round(sum(c["delta"] for c in chunk), 2)
+                end_eq = chunk[-1]["y"]
+                d_start = chunk[0]["dt"].strftime("%d/%m/%Y")
+                d_end = chunk[-1]["dt"].strftime("%d/%m/%Y")
+                hover_dt = d_end if len(chunk) == 1 else f"{d_start} – {d_end} ({len(chunk)} ימי סגירה)"
+                milestones.append(
+                    {
+                        "short_lbl": chunk[-1]["dt"].strftime("%d/%m"),
+                        "hover_date": hover_dt,
+                        "kind": "profit" if agg_delta >= 0 else "loss",
+                        "delta": agg_delta,
+                        "y": end_eq,
+                    }
+                )
+    return milestones
+
+
 def render_charts_row(df_trades: pd.DataFrame, df_cash: pd.DataFrame) -> None:
-    # ב-RTL העמודה הראשונה מוצגת בצד ימין והשנייה בצד שמאל
     col_right_eq, col_left_daily = st.columns(2)
     closed_df = df_trades[df_trades["status"] == "Closed"].copy() if not df_trades.empty else pd.DataFrame()
 
-    # --- Right Chart: Equity Curve (Last 18 points for clean visual) ---
+    # --- Right Chart: Equity Curve ---
     with col_right_eq:
         with st.container(border=True):
             hdr_c1, hdr_c2 = st.columns([1.15, 1.35])
             with hdr_c1:
                 _html(
-                    '<div style="font-size:0.93rem; font-weight:800; color:#F8FAFC; text-align:right; padding-top:4px;">'
-                    'צמיחת הון - Equity Curve'
-                    '</div>'
+                    f'<div class="jh-title" style="padding-top:4px;">'
+                    f'צמיחת הון - Equity Curve'
+                    f'</div>'
                 )
             with hdr_c2:
                 eq_mode = st.radio(
@@ -430,39 +658,9 @@ def render_charts_row(df_trades: pd.DataFrame, df_cash: pd.DataFrame) -> None:
                     if pd.notna(dt_v):
                         events.append({"dt": dt_v, "kind": "trade", "delta": pnl_v})
 
-            if events:
-                ev_df = pd.DataFrame(events).sort_values("dt")
-                points = []
-                running_eq = 0.0
-                for dt_val, grp in ev_df.groupby("dt"):
-                    dep_d = float(grp[grp["kind"] == "deposit"]["delta"].sum())
-                    trd_d = float(grp[grp["kind"] == "trade"]["delta"].sum())
-                    if dep_d != 0:
-                        running_eq += dep_d
-                        points.append(
-                            {
-                                "short_lbl": dt_val.strftime("%d/%m"),
-                                "full_lbl": dt_val.strftime("%d/%m/%Y"),
-                                "y": round(running_eq, 2),
-                                "kind": "deposit",
-                                "delta": round(dep_d, 2),
-                            }
-                        )
-                    if trd_d != 0 or dep_d == 0:
-                        running_eq += trd_d
-                        points.append(
-                            {
-                                "short_lbl": dt_val.strftime("%d/%m"),
-                                "full_lbl": dt_val.strftime("%d/%m/%Y"),
-                                "y": round(running_eq, 2),
-                                "kind": "profit" if trd_d >= 0 else "loss",
-                                "delta": round(trd_d, 2),
-                            }
-                        )
+            view_pts = _build_equity_milestones(events, target_points=24)
 
-                # צמצום ל-18 נקודות אחרונות לתצוגה נקייה ומרווחת בדף הבית
-                view_pts = points[-18:]
-
+            if view_pts:
                 fig_eq = go.Figure()
                 for i in range(1, len(view_pts)):
                     p0 = view_pts[i - 1]
@@ -491,7 +689,7 @@ def render_charts_row(df_trades: pd.DataFrame, df_cash: pd.DataFrame) -> None:
                 ]
                 pt_symbols = ["diamond" if p["kind"] == "deposit" else "circle" for p in view_pts]
                 pt_texts = [
-                    f"{p['full_lbl']}<br>{'הפקדה' if p['kind'] == 'deposit' else 'תוצאת מסחר'}: {p['delta']:+,.2f}$<br>שווי מצטבר: ${p['y']:,.2f}"
+                    f"<b>{p['hover_date']}</b><br>{'הפקדת הון' if p['kind'] == 'deposit' else 'תוצאת מסחר מצטברת'}: {p['delta']:+,.2f}$<br>שווי חשבון: ${p['y']:,.2f}"
                     for p in view_pts
                 ]
                 fig_eq.add_trace(
@@ -506,13 +704,14 @@ def render_charts_row(df_trades: pd.DataFrame, df_cash: pd.DataFrame) -> None:
                     )
                 )
 
-                step = max(1, len(view_pts) // 8)
-                tick_idx = list(range(0, len(view_pts), step))
+                n_pts = len(view_pts)
+                step = max(1, (n_pts - 1) // 7)
+                tick_idx = sorted(list(set([0] + list(range(step, n_pts - 1, step)) + [n_pts - 1])))
                 tick_lbl = [view_pts[idx]["short_lbl"] for idx in tick_idx]
 
                 fig_eq.update_layout(
                     height=265,
-                    margin=dict(l=52, r=16, t=12, b=46),
+                    margin=dict(l=54, r=18, t=12, b=46),
                     paper_bgcolor="rgba(0,0,0,0)",
                     plot_bgcolor="rgba(0,0,0,0)",
                     font=dict(family="Assistant, Rubik, sans-serif", color="#94A3B8", size=11),
@@ -535,7 +734,7 @@ def render_charts_row(df_trades: pd.DataFrame, df_cash: pd.DataFrame) -> None:
                 )
                 st.plotly_chart(fig_eq, use_container_width=True, config={"displayModeBar": False})
                 _html(
-                    '<div style="display:flex; gap:16px; justify-content:flex-start; direction:rtl; font-size:0.75rem; color:#94A3B8; padding:0 4px 2px 4px;">'
+                    f'<div style="display:flex; gap:16px; justify-content:flex-start; direction:rtl; font-family:{APP_FONT} !important; font-size:0.78rem; color:#94A3B8; padding:0 4px 2px 4px;">'
                     '<span><b style="color:#10B981;">●</b> רווח מעסקה</span>'
                     '<span><b style="color:#EF4444;">●</b> הפסד מעסקה</span>'
                     '<span><b style="color:#38BDF8;">◆</b> הפקדת הון</span>'
@@ -544,14 +743,14 @@ def render_charts_row(df_trades: pd.DataFrame, df_cash: pd.DataFrame) -> None:
             else:
                 st.info("אין עדיין נתונים להצגת עקומת ההון.")
 
-    # --- Left Chart: Daily P/L Bar Chart (Last 14 trading days for clean visual) ---
+    # --- Left Chart: Daily P/L Bar Chart ---
     with col_left_daily:
         with st.container(border=True):
             _html(
-                '<div style="display:flex; justify-content:space-between; align-items:center; direction:rtl; padding-top:4px; margin-bottom:2px;">'
-                '<span style="font-size:0.93rem; font-weight:800; color:#F8FAFC;">רווח / הפסד יומי - Daily P/L</span>'
-                '<span style="font-size:0.74rem; color:#64748B;">14 ימי מסחר אחרונים</span>'
-                '</div>'
+                f'<div style="display:flex; justify-content:space-between; align-items:center; direction:rtl; padding-top:4px; margin-bottom:2px; font-family:{APP_FONT} !important;">'
+                f'<span class="jh-title">רווח / הפסד יומי - Daily P/L</span>'
+                f'<span style="font-size:0.76rem; color:#64748B;">14 ימי מסחר אחרונים</span>'
+                f'</div>'
             )
             if not closed_df.empty and closed_df["close_date"].notna().any():
                 closed_df["dt"] = pd.to_datetime(closed_df["close_date"], errors="coerce")
@@ -581,7 +780,7 @@ def render_charts_row(df_trades: pd.DataFrame, df_cash: pd.DataFrame) -> None:
                 )
                 fig_bar.update_layout(
                     height=291,
-                    margin=dict(l=48, r=16, t=12, b=46),
+                    margin=dict(l=50, r=16, t=12, b=46),
                     paper_bgcolor="rgba(0,0,0,0)",
                     plot_bgcolor="rgba(0,0,0,0)",
                     font=dict(family="Assistant, Rubik, sans-serif", color="#94A3B8", size=11),
@@ -615,10 +814,11 @@ def render_journal_home() -> None:
             if pd.notna(r.get("display_price")):
                 price_map[str(r["symbol"]).upper()] = float(r["display_price"])
 
+    usd_ils = get_live_usd_ils()
     df_trades, df_cash = load_journal_data()
-    m = compute_dashboard_metrics(df_trades, df_cash, price_map)
+    m = compute_dashboard_metrics(df_trades, df_cash, price_map, usd_ils)
 
-    # Top Action Buttons aligned to the RIGHT (no page title)
+    # Top Action Buttons aligned to the RIGHT
     btn_col1, btn_col2, _spacer = st.columns([1.15, 1.0, 3.1])
     with btn_col1:
         if st.button("＋ פתיחת עסקה חדשה", type="primary", use_container_width=True):
@@ -628,51 +828,66 @@ def render_journal_home() -> None:
             open_deposit_dialog()
 
     # === ROW 1: 8 Capital, P/L, Tax, Fees & Deposits Cards (4 x 2 Grid) ===
+    ils_formatted = f"₪{m['account_value_ils']:,.0f}"
+    account_val_html = (
+        f'{_ltr_num(_fmt_usd(m["account_value"]))}'
+        f'<span class="jh-ils-inline">({ils_formatted})</span>'
+    )
+    account_badge_html = f'<span class="jh-fx-badge">USD/ILS {m["usd_ils"]:.3f} ₪</span>'
+
     row1_cards = [
         (
             "שווי חשבון - Account Value",
-            _ltr_num(_fmt_usd(m["account_value"])),
+            account_badge_html,
+            account_val_html,
             "#F8FAFC",
-            "הון פנוי + שווי פוזיציות פתוחות",
+            "הון פנוי + שווי פוזיציות פתוחות (מומר לש״ח)",
         ),
         (
             "הון מושקע - Invested Capital",
+            "",
             _ltr_num(_fmt_usd(m["invested_open"])),
             "#60A5FA",
             f"מושקע כעת ב-{m['n_open']} פוזיציות",
         ),
         (
             "הון פנוי - Available Cash",
+            "",
             _ltr_num(_fmt_usd(m["available_cash"])),
             "#38BDF8" if m["available_cash"] >= 0 else "#EF4444",
             "מזומן זמין לפתיחת עסקאות",
         ),
         (
             "רווח / הפסד כולל - Total Net P/L",
+            "",
             _ltr_num(_fmt_usd(m["realized_pnl"], signed=True)),
             "#10B981" if m["realized_pnl"] >= 0 else "#EF4444",
             "נטו ממומש לאחר מס ועמלות",
         ),
         (
             "רווח / הפסד פתוח - Open P/L",
+            "",
             _ltr_num(_fmt_usd(m["open_pnl"], signed=True)),
             "#10B981" if m["open_pnl"] >= 0 else "#EF4444",
             "שינוי חי בעסקאות הפעילות כרגע",
         ),
         (
             "מס ששולם - Tax Paid",
+            "",
             _ltr_num(_fmt_usd(m["tax_paid"])),
             "#F59E0B",
             "סה״כ מס שנוכה מעסקאות סגורות",
         ),
         (
             "עמלות - Commissions",
+            "",
             _ltr_num(_fmt_usd(m["fees_paid"])),
             "#CBD5E1",
             "סה״כ עמלות קנייה ומכירה",
         ),
         (
             "סה״כ הפקדות - Total Deposits",
+            "",
             _ltr_num(_fmt_usd(m["total_deposits"])),
             "#A78BFA",
             "סך כל ההפקדות לחשבון המסחר",
@@ -681,71 +896,159 @@ def render_journal_home() -> None:
 
     for batch_start in (0, 4):
         cols = st.columns(4)
-        for col, (title, val_html, color, sub) in zip(cols, row1_cards[batch_start : batch_start + 4]):
+        for col, (title, badge_html, val_html, color, sub) in zip(cols, row1_cards[batch_start : batch_start + 4]):
             with col:
                 _html(
                     f"""
                     <div class="jh-card">
-                        <div class="jh-title">{title}</div>
+                        <div class="jh-title-row">
+                            <div class="jh-title">{title}</div>
+                            {badge_html}
+                        </div>
                         <div class="jh-value" style="color:{color};">{val_html}</div>
                         <div class="jh-sub">{sub}</div>
                     </div>
                     """
                 )
 
-    # === ROW 2: 6 Performance & Risk Cards (3 x 2 Grid) ===
-    row2_cards = [
-        (
-            "אחוזי הצלחה - Win Rate",
-            _ltr_num(f"{m['win_rate']:.1f}%"),
-            "#10B981" if m["win_rate"] >= 50 else "#F59E0B",
-            f"<span style='color:#10B981; font-weight:700;'>{m['n_wins']} רווחיות</span> &nbsp;|&nbsp; <span style='color:#EF4444; font-weight:700;'>{m['n_losses']} מפסידות</span>",
-        ),
-        (
-            "כמות טריידים - Total Trades",
-            _ltr_num(f"{m['n_total']}"),
-            "#F8FAFC",
-            f"<span style='color:#60A5FA; font-weight:700;'>{m['n_open']} פתוחים</span> &nbsp;|&nbsp; <span style='color:#94A3B8; font-weight:700;'>{m['n_closed']} סגורים</span>",
-        ),
-        (
-            "חשיפה נוכחית - Current Exposure",
-            _ltr_num(f"{m['exposure_pct']:.1f}%"),
-            "#38BDF8" if m["exposure_pct"] <= 80 else "#F59E0B",
-            "שיעור ההון המושקע מתוך שווי החשבון",
-        ),
-        (
-            "ציון עקביות - Consistency Score",
-            _ltr_num(f"{m['consistency_score']:.1f}"),
-            "#10B981" if m["consistency_score"] >= 75 else "#60A5FA",
-            f"עמידה בתוכנית המסחר: {m['plan_rate']:.0f}%",
-        ),
-        (
-            "ממוצע עסקה - Avg Win / Loss",
-            f"<span dir='ltr' style='display:inline-block;'><span style='color:#10B981;'>+${m['avg_win']:,.2f}</span> <span style='color:#475569;'>/</span> <span style='color:#EF4444;'>-${abs(m['avg_loss']):,.2f}</span></span>",
-            "#F8FAFC",
-            "ממוצע עסקה מרוויחה מול מפסידה",
-        ),
-        (
-            "הטובה / הגרועה - Best / Worst Trade",
-            f"<span dir='ltr' style='display:inline-block;'><span style='color:#10B981;'>+${m['best_val']:,.2f}</span> <span style='color:#475569;'>/</span> <span style='color:#EF4444;'>-${abs(m['worst_val']):,.2f}</span></span>",
-            "#F8FAFC",
-            f"שיא: {m['best_sym']} &nbsp;|&nbsp; שפל: {m['worst_sym']}",
-        ),
-    ]
+    # === ROW 2A: Win Rate (with Arc Gauge), Total Trades, Current Exposure (with Ratio & Progress Bar) ===
+    r2_c1, r2_c2, r2_c3 = st.columns(3)
 
-    for batch_start in (0, 3):
-        cols = st.columns(3)
-        for col, (title, val_html, color, sub_html) in zip(cols, row2_cards[batch_start : batch_start + 3]):
-            with col:
-                _html(
-                    f"""
-                    <div class="jh-card">
-                        <div class="jh-title">{title}</div>
-                        <div class="jh-value" style="color:{color}; font-size:1.4rem;">{val_html}</div>
-                        <div class="jh-sub">{sub_html}</div>
+    # Card 2.1: Win Rate with Semicircular SVG Gauge
+    with r2_c1:
+        wr_val = max(0.0, min(100.0, float(m["win_rate"])))
+        wr_color = "#10B981" if wr_val >= 50 else "#F59E0B"
+        _html(
+            f"""
+            <div class="jh-card jh-card-r2">
+                <div class="jh-title">אחוזי הצלחה - Win Rate</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+                    <div>
+                        <div class="jh-value" style="color:{wr_color}; margin-bottom:6px;">{_ltr_num(f"{wr_val:.1f}%")}</div>
+                        <div class="jh-sub">
+                            <span style="color:#10B981; font-weight:700;">{m['n_wins']} רווחיות</span> &nbsp;|&nbsp;
+                            <span style="color:#EF4444; font-weight:700;">{m['n_losses']} מפסידות</span>
+                        </div>
                     </div>
-                    """
-                )
+                    <svg viewBox="0 0 100 58" width="96" height="56" style="flex-shrink:0; overflow:visible;">
+                        <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="rgba(239,68,68,0.28)" stroke-width="10" stroke-linecap="round" />
+                        <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#10B981" stroke-width="10" stroke-linecap="round" pathLength="100" stroke-dasharray="{wr_val:.1f} 100" />
+                    </svg>
+                </div>
+            </div>
+            """
+        )
+
+    # Card 2.2: Total Trades
+    with r2_c2:
+        _html(
+            f"""
+            <div class="jh-card jh-card-r2">
+                <div class="jh-title">כמות טריידים - Total Trades</div>
+                <div class="jh-value" style="color:#F8FAFC;">{_ltr_num(f"{m['n_total']}")}</div>
+                <div class="jh-sub">
+                    <span style="color:#60A5FA; font-weight:700;">{m['n_open']} פתוחים</span> &nbsp;|&nbsp;
+                    <span style="color:#94A3B8; font-weight:700;">{m['n_closed']} סגורים</span>
+                </div>
+            </div>
+            """
+        )
+
+    # Card 2.3: Current Exposure with Dollar Ratio + Blue Progress Bar
+    with r2_c3:
+        exp_val = max(0.0, float(m["exposure_pct"]))
+        exp_bar_w = min(100.0, exp_val)
+        exp_color = "#F8FAFC" if exp_val <= 85 else "#F59E0B"
+        ratio_str = f"${m['invested_open']:,.0f} / ${m['account_value']:,.0f}"
+        _html(
+            f"""
+            <div class="jh-card jh-card-r2">
+                <div class="jh-title">חשיפה נוכחית - Current Exposure</div>
+                <div style="display:flex; justify-content:space-between; align-items:baseline; margin:2px 0 4px 0;">
+                    <span class="jh-value" style="color:{exp_color}; width:auto; margin:0;">{_ltr_num(f"{exp_val:.1f}%")}</span>
+                    <span dir="ltr" style="font-size:0.84rem; font-weight:700; color:#94A3B8;">{ratio_str}</span>
+                </div>
+                <div class="jh-bar-track">
+                    <div class="jh-bar-fill-blue" style="width:{exp_bar_w:.1f}%;"></div>
+                </div>
+            </div>
+            """
+        )
+
+    # === ROW 2B: Consistency Score, Avg Trade P/L (Split + Dual Bar), Best/Worst Trade (Split + Ticker Pills) ===
+    r2_c4, r2_c5, r2_c6 = st.columns(3)
+
+    # Card 2.4: Consistency Score
+    with r2_c4:
+        cons_color = "#10B981" if m["consistency_score"] >= 75 else "#38BDF8"
+        _html(
+            f"""
+            <div class="jh-card jh-card-r2">
+                <div class="jh-title">ציון עקביות - Consistency Score</div>
+                <div class="jh-value" style="color:{cons_color};">{_ltr_num(f"{m['consistency_score']:.1f}%")}</div>
+                <div class="jh-sub">
+                    עמידה בתוכנית המסחר: <b style="color:#CBD5E1;">{m['plan_yes']} מתוך {m['plan_total']}</b> עסקאות מתועדות
+                </div>
+            </div>
+            """
+        )
+
+    # Card 2.5: Avg Trade P/L (Split Layout + Green/Red Comparison Bar)
+    with r2_c5:
+        aw = float(m["avg_win"])
+        al = abs(float(m["avg_loss"]))
+        tot_a = aw + al
+        win_share = (aw / tot_a * 100.0) if tot_a > 0 else 50.0
+        loss_share = 100.0 - win_share
+        _html(
+            f"""
+            <div class="jh-card jh-card-r2">
+                <div class="jh-title">ממוצע עסקה - Avg Trade P/L</div>
+                <div class="jh-split-grid">
+                    <div class="jh-split-right">
+                        <div class="jh-mini-lbl">רווח ממוצע</div>
+                        <div class="jh-split-val" style="color:#10B981;">{_ltr_num(f"+${aw:,.2f}")}</div>
+                    </div>
+                    <div class="jh-split-left">
+                        <div class="jh-mini-lbl">הפסד ממוצע</div>
+                        <div class="jh-split-val" style="color:#EF4444;">{_ltr_num(f"-${al:,.2f}")}</div>
+                    </div>
+                </div>
+                <div class="jh-split-bar">
+                    <div style="width:{win_share:.1f}%; background:#10B981;"></div>
+                    <div style="width:{loss_share:.1f}%; background:#EF4444;"></div>
+                </div>
+            </div>
+            """
+        )
+
+    # Card 2.6: Best / Worst Trade (Split Layout + Ticker Pill Badges)
+    with r2_c6:
+        b_sym = html.escape(str(m["best_sym"]))
+        w_sym = html.escape(str(m["worst_sym"]))
+        _html(
+            f"""
+            <div class="jh-card jh-card-r2">
+                <div class="jh-title">הטובה / הגרועה - Best / Worst Trade</div>
+                <div class="jh-split-grid" style="margin-bottom:2px;">
+                    <div class="jh-split-right">
+                        <div class="jh-mini-lbl">העסקה הטובה ביותר</div>
+                        <div style="display:flex; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap;">
+                            <span class="jh-split-val" style="color:#10B981;">{_ltr_num(f"+${m['best_val']:,.2f}")}</span>
+                            <span class="jh-ticker-pill jh-pill-win">{b_sym}</span>
+                        </div>
+                    </div>
+                    <div class="jh-split-left">
+                        <div class="jh-mini-lbl">העסקה הגרועה ביותר</div>
+                        <div style="display:flex; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap;">
+                            <span class="jh-split-val" style="color:#EF4444;">{_ltr_num(f"-${abs(m['worst_val']):,.2f}")}</span>
+                            <span class="jh-ticker-pill jh-pill-loss">{w_sym}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """
+        )
 
     # === ROW 3: Charts ===
     render_charts_row(df_trades, df_cash)
@@ -784,8 +1087,8 @@ def render_journal_home() -> None:
             f"""
             <div class="jh-card" style="height:100%;">
                 <div class="jh-title">רצף נוכחי ומשמעת - Streak & Discipline</div>
-                <div class="jh-value" style="color:{st_color}; font-size:1.35rem;">
-                    {m['streak_count']} {m['streak_type']} ברצף
+                <div class="jh-value" style="color:{st_color}; font-size:1.42rem;">
+                    <span>{m['streak_count']} {m['streak_type']} ברצף</span>
                 </div>
                 <div class="jh-sub" style="margin-top:8px;">
                     שיעור עמידה בכללי התוכנית: <b style="color:#F8FAFC;">{m['plan_rate']:.1f}%</b><br>
@@ -801,7 +1104,7 @@ def render_journal_home() -> None:
             f"""
             <div class="jh-card" style="height:100%;">
                 <div class="jh-title">דופק חודשי - Monthly Pulse</div>
-                <div class="jh-value" style="color:{m_color}; font-size:1.4rem;">
+                <div class="jh-value" style="color:{m_color}; font-size:1.44rem;">
                     {_ltr_num(_fmt_usd(m['month_closed_pnl'], signed=True))}
                 </div>
                 <div class="jh-sub" style="margin-top:8px;">
