@@ -1,28 +1,16 @@
-# === [SEC-01: IMPORTS & HELPERS] ===
+# === [SEC-01: IMPORTS & STYLING HELPERS] ===
 import html
-from datetime import date
+from datetime import date, datetime
+import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 from db import load_market_dataframe
 from journal_helpers import (
-    VOLUME_TREND_OPTIONS,
-    MACD_OPTIONS,
-    CCI_OPTIONS,
-    TRENDLINE_OPTIONS,
-    GAPS_OPTIONS,
-    FIBONACCI_OPTIONS,
-    CANDLE_OPTIONS,
-    CANDLE_TREND_OPTIONS,
-    INDICATOR_GUIDE_SECTIONS,
-    SIGNAL_SYNERGY_MATRIX,
     compute_live_entry_indicators,
-    analyze_candles_with_gemini,
     load_journal_data,
     insert_trade,
-    update_trade,
-    delete_trade,
     insert_cash_tx,
-    import_journal_csv,
 )
 
 
@@ -31,18 +19,234 @@ def _html(raw: str) -> None:
     st.markdown(cleaned, unsafe_allow_html=True)
 
 
-def _fmt_usd(val: float | None, signed: bool = False) -> str:
+def _fmt_usd(val: float | None, signed: bool = False, decimals: int = 2) -> str:
     if val is None or pd.isna(val):
         return "--"
     v = float(val)
+    fmt = f"{{:,.{decimals}f}}"
     if signed:
         sign = "+" if v > 0 else ("-" if v < 0 else "")
-        return f"{sign}${abs(v):,.2f}"
-    return f"${v:,.2f}"
+        return f"{sign}${fmt.format(abs(v))}"
+    return f"${fmt.format(v)}"
 
 
-# === [SEC-02: TOP PORTFOLIO & JOURNAL KPI SUMMARY] ===
-def render_journal_kpis(df_trades: pd.DataFrame, df_cash: pd.DataFrame, price_map: dict[str, float]) -> None:
+def inject_journal_home_css() -> None:
+    _html(
+        """
+        <style>
+        .jh-card {
+            background: linear-gradient(180deg, #111622 0%, #0D111A 100%);
+            border: 1px solid #1E2638;
+            border-radius: 16px;
+            padding: 16px 18px;
+            margin-bottom: 12px;
+            transition: border-color 0.2s ease, transform 0.15s ease;
+        }
+        .jh-card:hover {
+            border-color: #334155;
+        }
+        .jh-title {
+            font-size: 0.84rem;
+            font-weight: 700;
+            color: #94A3B8;
+            margin-bottom: 8px;
+            letter-spacing: 0.2px;
+        }
+        .jh-value {
+            font-size: 1.55rem;
+            font-weight: 800;
+            line-height: 1.2;
+            direction: ltr;
+            text-align: right;
+            margin-bottom: 6px;
+        }
+        .jh-sub {
+            font-size: 0.78rem;
+            color: #64748B;
+            line-height: 1.4;
+        }
+        .jh-section-label {
+            font-size: 0.92rem;
+            font-weight: 800;
+            color: #CBD5E1;
+            margin: 8px 0 10px 0;
+        }
+        .jh-pulse-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 10px;
+            background: #0A0E17;
+            border: 1px solid #1A2234;
+            border-radius: 10px;
+            margin-bottom: 6px;
+            font-size: 0.84rem;
+        }
+        /* Force visual uppercase in Ticker input inside modal */
+        div[data-testid="stDialog"] input[type="text"] {
+            text-transform: uppercase !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.8px !important;
+        }
+        </style>
+        """
+    )
+
+
+# === [SEC-02: MODAL DIALOGS - DEPOSIT & NEW LONG TRADE] ===
+@st.dialog("הפקדה לחשבון המסחר", width="small")
+def open_deposit_dialog() -> None:
+    st.caption("תיעוד הפקדת מזומן חדשה לחשבון המסחר")
+    dep_amount = st.number_input(
+        "סכום הפקדה בדולרים ($)",
+        min_value=1.0,
+        value=1000.0,
+        step=100.0,
+        format="%.2f",
+        key="dlg_dep_amount",
+    )
+    dep_date = st.date_input(
+        "תאריך הפקדה",
+        value=date.today(),
+        key="dlg_dep_date",
+    )
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    if st.button("שמור הפקדה", type="primary", use_container_width=True):
+        insert_cash_tx(dep_date.isoformat(), "Deposit", dep_amount, "הפקדה דרך יומן מסחר")
+        st.success(f"הופקדו ${dep_amount:,.2f} בהצלחה!")
+        st.rerun()
+
+
+@st.dialog("פתיחת עסקה חדשה", width="small")
+def open_new_trade_dialog(df_market: pd.DataFrame) -> None:
+    raw_ticker = st.text_input(
+        "Ticker (סימול מניה)",
+        placeholder="לדוגמה: MSFT",
+        key="dlg_trade_ticker",
+    )
+    clean_ticker = "".join(ch for ch in raw_ticker.strip().upper() if ch.isalnum() or ch in (".", "-"))
+
+    snap_row = None
+    default_price = 100.0
+    comp_name = clean_ticker
+    if clean_ticker and not df_market.empty:
+        matches = df_market[df_market["symbol"].str.upper().str.endswith(clean_ticker)]
+        exact = df_market[df_market["symbol"].str.upper() == clean_ticker]
+        chosen_df = exact if not exact.empty else matches
+        if not chosen_df.empty:
+            snap_row = chosen_df.iloc[0]
+            comp_name = str(snap_row.get("company_name") or clean_ticker)
+            if pd.notna(snap_row.get("display_price")):
+                default_price = float(snap_row["display_price"])
+
+    if clean_ticker:
+        _html(
+            f"""
+            <div style="background:#0D111A; border:1px solid #1E2638; border-radius:10px; padding:8px 12px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                <span style="color:#94A3B8; font-size:0.82rem;">{html.escape(comp_name)}</span>
+                <span style="color:#38BDF8; font-weight:800; font-size:0.95rem; direction:ltr;">{html.escape(clean_ticker)}</span>
+            </div>
+            """
+        )
+
+    entry_dt = st.date_input("תאריך כניסה", value=date.today(), key="dlg_trade_date")
+
+    c_qty, c_price = st.columns(2)
+    with c_qty:
+        qty = st.number_input(
+            "כמות מניות",
+            min_value=0.0001,
+            value=1.0,
+            step=1.0,
+            format="%.4f",
+            key="dlg_trade_qty",
+        )
+    with c_price:
+        buy_price = st.number_input(
+            "שער קנייה ($)",
+            min_value=0.01,
+            value=round(default_price, 2),
+            step=0.1,
+            format="%.2f",
+            key="dlg_trade_price",
+        )
+
+    invested_total = round(qty * buy_price, 2)
+    _html(
+        f"""
+        <div style="background:linear-gradient(90deg, rgba(16,185,129,0.12) 0%, rgba(13,17,26,0.95) 100%);
+                    border:1px solid rgba(16,185,129,0.35); border-radius:12px; padding:12px 14px; margin:10px 0 14px 0;
+                    display:flex; justify-content:space-between; align-items:center;">
+            <span style="color:#CBD5E1; font-size:0.86rem; font-weight:700;">סכום השקעה מחושב</span>
+            <span style="color:#10B981; font-size:1.25rem; font-weight:800; direction:ltr;">${invested_total:,.2f}</span>
+        </div>
+        """
+    )
+
+    if st.button("פתח עסקה ושמור", type="primary", use_container_width=True):
+        if not clean_ticker:
+            st.error("יש להזין סימול מניה (Ticker).")
+            return
+
+        with st.spinner(f"שומר עסקה ב-{clean_ticker} ומושך נתונים טכניים..."):
+            live_ind = compute_live_entry_indicators(clean_ticker)
+            snap_fields: dict = {}
+            if snap_row is not None:
+                ds1 = f"${float(snap_row['d_s_1']):,.2f}" if pd.notna(snap_row.get("d_s_1")) else "-"
+                dr1 = f"${float(snap_row['d_r_1']):,.2f}" if pd.notna(snap_row.get("d_r_1")) else "-"
+                ws1 = f"${float(snap_row['w_s_1']):,.2f}" if pd.notna(snap_row.get("w_s_1")) else "-"
+                wr1 = f"${float(snap_row['w_r_1']):,.2f}" if pd.notna(snap_row.get("w_r_1")) else "-"
+                snap_fields = {
+                    "daily_next_sr": f"S: {ds1} | R: {dr1}",
+                    "weekly_next_sr": f"S: {ws1} | R: {wr1}",
+                    "ma_20": snap_row.get("ma_20_status"),
+                    "ma_50": snap_row.get("ma_50_status"),
+                    "ma_150": snap_row.get("ma_150_status"),
+                    "ma_200": snap_row.get("ma_200_status"),
+                    "rsi": float(snap_row["rsi"]) if pd.notna(snap_row.get("rsi")) else live_ind.get("rsi_live"),
+                    "atr_14": float(snap_row["atr_14"]) if pd.notna(snap_row.get("atr_14")) else None,
+                    "atr_pct": float(snap_row["atr_pct"]) if pd.notna(snap_row.get("atr_pct")) else None,
+                    "atr_squeeze_pct": float(snap_row["atr_squeeze_pct"]) if pd.notna(snap_row.get("atr_squeeze_pct")) else None,
+                    "rel_vol_5d": float(snap_row["rel_vol_5d"]) if pd.notna(snap_row.get("rel_vol_5d")) else None,
+                    "rel_vol_10d": float(snap_row["rel_vol_10d"]) if pd.notna(snap_row.get("rel_vol_10d")) else None,
+                    "rel_vol_15d": float(snap_row["rel_vol_15d"]) if pd.notna(snap_row.get("rel_vol_15d")) else None,
+                    "rel_vol_20d": float(snap_row["rel_vol_20d"]) if pd.notna(snap_row.get("rel_vol_20d")) else None,
+                    "rel_vol_30d": float(snap_row["rel_vol_30d"]) if pd.notna(snap_row.get("rel_vol_30d")) else None,
+                }
+                for prefix in ("d_s", "d_r", "w_s", "w_r"):
+                    for idx in range(1, 6):
+                        col = f"{prefix}_{idx}"
+                        snap_fields[col] = float(snap_row[col]) if pd.notna(snap_row.get(col)) else None
+            else:
+                snap_fields["rsi"] = live_ind.get("rsi_live")
+
+            payload = {
+                "entry_date": entry_dt.isoformat(),
+                "symbol": clean_ticker,
+                "company_name": comp_name,
+                "direction": "Long",
+                "entry_price": round(float(buy_price), 4),
+                "quantity": round(float(qty), 4),
+                "purchase_amount": invested_total,
+                "status": "Open",
+                "volume_trend": live_ind.get("volume_trend"),
+                "macd_status": live_ind.get("macd_status"),
+                "cci_value": live_ind.get("cci_value"),
+                "cci_status": live_ind.get("cci_status"),
+                **snap_fields,
+            }
+            insert_trade(payload)
+
+        st.success(f"עסקת Long ב-{clean_ticker} נפתחה בהצלחה!")
+        st.rerun()
+
+
+# === [SEC-03: METRICS CALCULATION ENGINE] ===
+def compute_dashboard_metrics(
+    df_trades: pd.DataFrame,
+    df_cash: pd.DataFrame,
+    price_map: dict[str, float],
+) -> dict:
     total_deposits = (
         float(df_cash[df_cash["tx_type"] == "Deposit"]["amount_usd"].sum())
         - float(df_cash[df_cash["tx_type"] == "Withdrawal"]["amount_usd"].sum())
@@ -50,537 +254,322 @@ def render_journal_kpis(df_trades: pd.DataFrame, df_cash: pd.DataFrame, price_ma
         else 0.0
     )
 
-    if df_trades.empty:
-        open_df = pd.DataFrame()
-        closed_df = pd.DataFrame()
-    else:
-        open_df = df_trades[df_trades["status"] == "Open"].copy()
-        closed_df = df_trades[df_trades["status"] == "Closed"].copy()
+    open_df = df_trades[df_trades["status"] == "Open"].copy() if not df_trades.empty else pd.DataFrame()
+    closed_df = df_trades[df_trades["status"] == "Closed"].copy() if not df_trades.empty else pd.DataFrame()
 
     invested_open = 0.0
-    unrealized_pnl = 0.0
+    open_pnl = 0.0
+    open_positions_list = []
+
     for _, r in open_df.iterrows():
         sym = str(r["symbol"]).upper()
         ep = float(r["entry_price"])
         qty = float(r["quantity"])
         cost = ep * qty
         invested_open += cost
-        live_p = price_map.get(sym)
-        if live_p is not None:
-            mult = 1.0 if str(r.get("direction", "Long")) == "Long" else -1.0
-            unrealized_pnl += (live_p - ep) * qty * mult
+        live_p = price_map.get(sym, ep)
+        pnl_u = (live_p - ep) * qty
+        pnl_pct = ((live_p - ep) / ep * 100.0) if ep > 0 else 0.0
+        open_pnl += pnl_u
+        open_positions_list.append(
+            {
+                "symbol": sym,
+                "cost": cost,
+                "live_p": live_p,
+                "pnl": pnl_u,
+                "pnl_pct": pnl_pct,
+                "stop_loss": float(r["stop_loss"]) if pd.notna(r.get("stop_loss")) else None,
+            }
+        )
 
     realized_pnl = float(closed_df["net_pnl"].fillna(0).sum()) if not closed_df.empty else 0.0
-    total_tax = float(closed_df["tax_paid"].fillna(0).sum()) if not closed_df.empty else 0.0
-    total_fees = float(df_trades["fees"].fillna(0).sum()) if not df_trades.empty else 0.0
+    tax_paid = float(closed_df["tax_paid"].fillna(0).sum()) if not closed_df.empty else 0.0
+    fees_paid = float(df_trades["fees"].fillna(0).sum()) if not df_trades.empty else 0.0
 
-    wins = len(closed_df[closed_df["net_pnl"].fillna(0) > 0]) if not closed_df.empty else 0
-    total_closed = len(closed_df)
-    win_rate = round((wins / total_closed) * 100, 1) if total_closed > 0 else 0.0
+    # Available Cash = Deposits + Realized Net P&L - Currently Invested Capital
+    available_cash = total_deposits + realized_pnl - invested_open
+    # Total Account Value = Available Cash + Current Market Value of Open Positions
+    account_value = available_cash + invested_open + open_pnl
+    exposure_pct = (invested_open / account_value * 100.0) if account_value > 0 else 0.0
 
-    est_cash_avail = total_deposits + realized_pnl - invested_open - total_fees
+    # Win / Loss & Trade Stats
+    wins_df = closed_df[closed_df["net_pnl"].fillna(0) > 0] if not closed_df.empty else pd.DataFrame()
+    losses_df = closed_df[closed_df["net_pnl"].fillna(0) < 0] if not closed_df.empty else pd.DataFrame()
+    n_wins = len(wins_df)
+    n_losses = len(losses_df)
+    n_closed = len(closed_df)
+    n_open = len(open_df)
+    n_total = len(df_trades)
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    cards = [
-        ("סה״כ הפקדות (Cash)", _fmt_usd(total_deposits), "#F8FAFC", f"מזומן פנוי משוער: {_fmt_usd(est_cash_avail)}"),
-        ("מושקע בפוזיציות פתוחות", _fmt_usd(invested_open), "#60A5FA", f"{len(open_df)} פוזיציות פתוחות"),
-        (
-            "רווח/הפסד לא-ממומש",
-            _fmt_usd(unrealized_pnl, signed=True),
-            "#10B981" if unrealized_pnl >= 0 else "#EF4444",
-            "מחושב לפי שער חי / אחרון",
-        ),
-        (
-            "רווח/הפסד ממומש נטו",
-            _fmt_usd(realized_pnl, signed=True),
-            "#10B981" if realized_pnl >= 0 else "#EF4444",
-            f"מס ששולם: {_fmt_usd(total_tax)}",
-        ),
-        (
-            "אחוז הצלחה (Win Rate)",
-            f"{win_rate}%",
-            "#F59E0B",
-            f"{wins} רווחיות מתוך {total_closed} סגורות",
-        ),
-    ]
+    win_rate = (n_wins / n_closed * 100.0) if n_closed > 0 else 0.0
+    avg_win = float(wins_df["net_pnl"].mean()) if n_wins > 0 else 0.0
+    avg_loss = float(losses_df["net_pnl"].mean()) if n_losses > 0 else 0.0
 
-    for col, (title, val_str, color, sub) in zip([c1, c2, c3, c4, c5], cards):
-        with col:
-            _html(
-                f"""
-                <div class="kpi-card">
-                    <div class="kpi-title">{title}</div>
-                    <div class="kpi-value" style="color:{color}; direction:ltr; text-align:right;">{val_str}</div>
-                    <div class="kpi-sub">{sub}</div>
-                </div>
-                """
-            )
+    best_val = float(closed_df["net_pnl"].max()) if n_closed > 0 else 0.0
+    best_sym = str(closed_df.loc[closed_df["net_pnl"].idxmax(), "symbol"]) if n_closed > 0 else "--"
+    worst_val = float(closed_df["net_pnl"].min()) if n_closed > 0 else 0.0
+    worst_sym = str(closed_df.loc[closed_df["net_pnl"].idxmin(), "symbol"]) if n_closed > 0 else "--"
 
-
-# === [SEC-03: TAB 1 - TRADES VIEW (CONSOLIDATED VS DETAILED) & CLOSE/EDIT] ===
-def render_trades_tab(df_trades: pd.DataFrame, price_map: dict[str, float]) -> None:
-    if df_trades.empty:
-        st.info("אין עדיין עסקאות ביומן. ניתן להוסיף עסקה חדשה בטאב 'פתיחת עסקה' או לייבא את הגיליון בטאב 'הפקדות וייבוא CSV'.")
-        return
-
-    f1, f2, f3 = st.columns([1.6, 1.2, 1.6])
-    with f1:
-        view_mode = st.radio(
-            "אופן תצוגה",
-            options=["תצוגה מאוחדת לפי מניה (Consolidated)", "תצוגת פעולות מפורטת (Detailed)"],
-            horizontal=True,
-            key="journal_view_mode",
-        )
-    with f2:
-        status_flt = st.selectbox("סטטוס עסקאות", ["הכל", "פתוחות (Open)", "סגורות (Closed)"], key="j_status_flt")
-    with f3:
-        sym_q = st.text_input("חיפוש לפי טיקר", placeholder="לדוגמה: MSFT, GOOGL...", key="j_sym_flt").strip().upper()
-
-    df_view = df_trades.copy()
-    if status_flt == "פתוחות (Open)":
-        df_view = df_view[df_view["status"] == "Open"]
-    elif status_flt == "סגורות (Closed)":
-        df_view = df_view[df_view["status"] == "Closed"]
-
-    if sym_q:
-        df_view = df_view[df_view["symbol"].str.upper().str.contains(sym_q, regex=False)]
-
-    if df_view.empty:
-        st.warning("לא נמצאו עסקאות התואמות לסינון.")
-        return
-
-    # Enrich rows with live P&L
-    live_prices = []
-    pnl_list = []
-    pnl_pct_list = []
-    for _, r in df_view.iterrows():
-        sym = str(r["symbol"]).upper()
-        ep = float(r["entry_price"])
-        qty = float(r["quantity"])
-        cost = ep * qty
-        st_val = str(r.get("status", "Open"))
-        curr_p = price_map.get(sym)
-        live_prices.append(curr_p)
-
-        if st_val == "Closed" and pd.notna(r.get("net_pnl")):
-            pnl = float(r["net_pnl"])
-        elif curr_p is not None:
-            mult = 1.0 if str(r.get("direction", "Long")) == "Long" else -1.0
-            pnl = (curr_p - ep) * qty * mult
-        else:
-            pnl = None
-
-        pnl_list.append(round(pnl, 2) if pnl is not None else None)
-        pnl_pct_list.append(round((pnl / cost) * 100, 2) if (pnl is not None and cost > 0) else None)
-
-    df_view["live_price"] = live_prices
-    df_view["calc_pnl"] = pnl_list
-    df_view["calc_pnl_pct"] = pnl_pct_list
-
-    if "מאוחדת" in view_mode:
-        # Group by Symbol + Status for clean aggregated view
-        grouped_rows = []
-        for (sym, st_val), grp in df_view.groupby(["symbol", "status"], sort=False):
-            tot_qty = float(grp["quantity"].sum())
-            tot_cost = float((grp["entry_price"] * grp["quantity"]).sum())
-            avg_entry = tot_cost / tot_qty if tot_qty > 0 else 0.0
-            curr_p = price_map.get(sym)
-            tot_pnl = float(grp["calc_pnl"].dropna().sum()) if grp["calc_pnl"].notna().any() else None
-            tot_pnl_pct = round((tot_pnl / tot_cost) * 100, 2) if (tot_pnl is not None and tot_cost > 0) else None
-            grouped_rows.append(
-                {
-                    "סימול": sym,
-                    "חברה": grp["company_name"].dropna().iloc[0] if grp["company_name"].notna().any() else sym,
-                    "סטטוס": "פתוחה" if st_val == "Open" else "סגורה",
-                    "מס׳ כניסות": len(grp),
-                    "כמות מצטברת": round(tot_qty, 4),
-                    "מחיר כניסה ממוצע": round(avg_entry, 2),
-                    "עלות כוללת ($)": round(tot_cost, 2),
-                    "מחיר נוכחי ($)": round(curr_p, 2) if curr_p is not None else None,
-                    "רווח/הפסד ($)": round(tot_pnl, 2) if tot_pnl is not None else None,
-                    "תשואה (%)": tot_pnl_pct,
-                }
-            )
-        st.dataframe(pd.DataFrame(grouped_rows), use_container_width=True, hide_index=True)
+    # Consistency Score (combines plan adherence + inverse return volatility)
+    plan_valid = df_trades["according_to_plan"].dropna() if not df_trades.empty else pd.Series(dtype=str)
+    plan_rate = float((plan_valid == "Yes").mean() * 100.0) if len(plan_valid) > 0 else 0.0
+    if n_closed >= 2:
+        std_pnl = float(closed_df["net_pnl"].std())
+        mean_abs = float(closed_df["net_pnl"].abs().mean())
+        stability = max(0.0, min(100.0, 100.0 - (std_pnl / (mean_abs + 1e-6)) * 25.0))
+        consistency_score = round((plan_rate * 0.65) + (stability * 0.35), 1)
     else:
-        disp_cols = {
-            "id": "מזהה",
-            "entry_date": "תאריך כניסה",
-            "symbol": "סימול",
-            "status": "סטטוס",
-            "entry_price": "מחיר כניסה",
-            "quantity": "כמות",
-            "stop_loss": "סטופ",
-            "take_profit": "יעד",
-            "rr_ratio": "R:R",
-            "exit_price": "מחיר יציאה",
-            "close_date": "תאריך סגירה",
-            "calc_pnl": "רווח/הפסד ($)",
-            "calc_pnl_pct": "תשואה (%)",
-            "macd_status": "MACD",
-            "cci_status": "CCI",
-            "volume_trend": "Volume Trend",
-            "according_to_plan": "לפי התוכנית",
-        }
-        avail = [c for c in disp_cols if c in df_view.columns]
-        st.dataframe(df_view[avail].rename(columns=disp_cols), use_container_width=True, hide_index=True)
+        consistency_score = round(plan_rate, 1)
 
-    # --- Manage / Close / Inspect Single Execution ---
-    st.markdown("---")
-    with st.expander("עדכון, סגירת עסקה או צפייה בפרטי Snapshot והערות", expanded=False):
-        options_map = {
-            f"#{int(r['id'])} | {r['entry_date']} | {r['symbol']} ({r['quantity']} @ ${r['entry_price']}) [{r['status']}]": int(r["id"])
-            for _, r in df_trades.iterrows()
-        }
-        sel_label = st.selectbox("בחר פעולה לעריכה / סגירה", options=list(options_map.keys()), key="edit_trade_sel")
-        sel_id = options_map[sel_label]
-        tr = df_trades[df_trades["id"] == sel_id].iloc[0]
+    # Streak & Monthly Pulse
+    streak_count = 0
+    streak_type = "נייטרלי"
+    if not closed_df.empty and "close_date" in closed_df.columns:
+        c_sorted = closed_df.dropna(subset=["close_date", "net_pnl"]).sort_values(["close_date", "id"])
+        if not c_sorted.empty:
+            vals = c_sorted["net_pnl"].tolist()
+            last_sign = 1 if vals[-1] > 0 else (-1 if vals[-1] < 0 else 0)
+            if last_sign != 0:
+                streak_type = "רווחים" if last_sign > 0 else "הפסדים"
+                for v in reversed(vals):
+                    if (last_sign > 0 and v > 0) or (last_sign < 0 and v < 0):
+                        streak_count += 1
+                    else:
+                        break
 
-        ec1, ec2, ec3, ec4 = st.columns(4)
-        with ec1:
-            new_status = st.selectbox(
-                "סטטוס",
-                ["Open", "Closed"],
-                index=0 if tr["status"] == "Open" else 1,
-                key=f"ed_st_{sel_id}",
+    now_ym = datetime.now().strftime("%Y-%m")
+    month_closed_pnl = 0.0
+    month_opened_cnt = 0
+    month_deposits = 0.0
+    if not closed_df.empty and "close_date" in closed_df.columns:
+        m_c = closed_df[closed_df["close_date"].astype(str).str.startswith(now_ym)]
+        month_closed_pnl = float(m_c["net_pnl"].fillna(0).sum())
+    if not df_trades.empty and "entry_date" in df_trades.columns:
+        m_o = df_trades[df_trades["entry_date"].astype(str).str.startswith(now_ym)]
+        month_opened_cnt = len(m_o)
+    if not df_cash.empty and "tx_date" in df_cash.columns:
+        m_d = df_cash[(df_cash["tx_date"].astype(str).str.startswith(now_ym)) & (df_cash["tx_type"] == "Deposit")]
+        month_deposits = float(m_d["amount_usd"].sum())
+
+    return {
+        "account_value": account_value,
+        "invested_open": invested_open,
+        "available_cash": available_cash,
+        "realized_pnl": realized_pnl,
+        "open_pnl": open_pnl,
+        "tax_paid": tax_paid,
+        "fees_paid": fees_paid,
+        "total_deposits": total_deposits,
+        "win_rate": win_rate,
+        "n_wins": n_wins,
+        "n_losses": n_losses,
+        "n_closed": n_closed,
+        "n_open": n_open,
+        "n_total": n_total,
+        "exposure_pct": exposure_pct,
+        "consistency_score": consistency_score,
+        "plan_rate": plan_rate,
+        "avg_win": avg_win,
+        "avg_loss": avg_loss,
+        "best_val": best_val,
+        "best_sym": best_sym,
+        "worst_val": worst_val,
+        "worst_sym": worst_sym,
+        "open_positions_list": sorted(open_positions_list, key=lambda x: abs(x["pnl"]), reverse=True),
+        "streak_count": streak_count,
+        "streak_type": streak_type,
+        "month_closed_pnl": month_closed_pnl,
+        "month_opened_cnt": month_opened_cnt,
+        "month_deposits": month_deposits,
+    }
+
+
+# === [SEC-04: CHARTS - DAILY P/L & MULTI-COLORED EQUITY CURVE] ===
+def render_charts_row(df_trades: pd.DataFrame, df_cash: pd.DataFrame) -> None:
+    col_daily, col_eq = st.columns(2)
+
+    # --- Chart 1: Daily P/L Bar Chart ---
+    with col_daily:
+        _html('<div class="jh-card" style="padding-bottom:8px;"><div class="jh-title" style="font-size:0.95rem; color:#F8FAFC;">רווח / הפסד יומי - Daily P/L</div>')
+        closed_df = df_trades[df_trades["status"] == "Closed"].copy() if not df_trades.empty else pd.DataFrame()
+        if not closed_df.empty and closed_df["close_date"].notna().any():
+            closed_df["dt"] = pd.to_datetime(closed_df["close_date"], errors="coerce")
+            daily = (
+                closed_df.dropna(subset=["dt"])
+                .groupby("dt")["net_pnl"]
+                .sum()
+                .sort_index()
             )
-        with ec2:
-            def_exit = float(tr["exit_price"]) if pd.notna(tr.get("exit_price")) else float(tr["entry_price"])
-            new_exit = st.number_input("מחיר יציאה ($)", min_value=0.0, value=def_exit, step=0.1, key=f"ed_ex_{sel_id}")
-        with ec3:
-            def_sqty = float(tr["sell_quantity"]) if pd.notna(tr.get("sell_quantity")) else float(tr["quantity"])
-            new_sqty = st.number_input("כמות נמכרת", min_value=0.0, value=def_sqty, step=0.1, key=f"ed_sq_{sel_id}")
-        with ec4:
-            def_cdt = pd.to_datetime(tr["close_date"]).date() if pd.notna(tr.get("close_date")) else date.today()
-            new_cdt = st.date_input("תאריך סגירה", value=def_cdt, key=f"ed_cd_{sel_id}")
+            x_labels = [d.strftime("%d/%m/%Y") for d in daily.index]
+            y_vals = [round(float(v), 2) for v in daily.values]
+            bar_colors = ["#10B981" if v >= 0 else "#EF4444" for v in y_vals]
 
-        ec5, ec6, ec7 = st.columns([1.0, 1.0, 1.2])
-        with ec5:
-            new_tax = st.number_input(
-                "מס ששולם ($)",
-                min_value=0.0,
-                value=float(tr["tax_paid"]) if pd.notna(tr.get("tax_paid")) else 0.0,
-                step=1.0,
-                key=f"ed_tx_{sel_id}",
+            fig_bar = go.Figure(
+                data=[
+                    go.Bar(
+                        x=x_labels,
+                        y=y_vals,
+                        marker_color=bar_colors,
+                        marker_line_width=0,
+                        hovertemplate="<b>%{x}</b><br>רווח/הפסד: $%{y:,.2f}<extra></extra>",
+                    )
+                ]
             )
-        with ec6:
-            new_fees = st.number_input(
-                "עמלות ($)",
-                min_value=0.0,
-                value=float(tr["fees"]) if pd.notna(tr.get("fees")) else 0.0,
-                step=0.5,
-                key=f"ed_fe_{sel_id}",
+            fig_bar.update_layout(
+                height=290,
+                margin=dict(l=12, r=12, t=10, b=36),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Assistant, Rubik, sans-serif", color="#94A3B8", size=11),
+                xaxis=dict(showgrid=False, tickangle=-35, tickfont=dict(size=10)),
+                yaxis=dict(showgrid=True, gridcolor="#1E2638", zeroline=True, zerolinecolor="#334155"),
+                bargap=0.28,
             )
-        with ec7:
-            plan_opts = ["", "Yes", "No"]
-            cur_plan = str(tr.get("according_to_plan") or "")
-            new_plan = st.selectbox(
-                "עמידה בתוכנית (According to Plan)",
-                plan_opts,
-                index=plan_opts.index(cur_plan) if cur_plan in plan_opts else 0,
-                key=f"ed_pl_{sel_id}",
-            )
-
-        new_notes = st.text_area(
-            "הערות ותחקור עסקה",
-            value=str(tr.get("notes") or ""),
-            key=f"ed_nt_{sel_id}",
-        )
-
-        b_save, b_del = st.columns([3.0, 1.0])
-        with b_save:
-            if st.button("שמור עדכון עסקה", type="primary", use_container_width=True):
-                ep = float(tr["entry_price"])
-                mult = 1.0 if str(tr.get("direction", "Long")) == "Long" else -1.0
-                calc_net = round(((new_exit - ep) * new_sqty * mult) - new_tax - new_fees, 4) if new_status == "Closed" else None
-                update_trade(
-                    sel_id,
-                    {
-                        "status": new_status,
-                        "exit_price": new_exit if new_status == "Closed" else None,
-                        "sell_quantity": new_sqty if new_status == "Closed" else None,
-                        "close_date": new_cdt.isoformat() if new_status == "Closed" else None,
-                        "tax_paid": new_tax,
-                        "fees": new_fees,
-                        "net_pnl": calc_net,
-                        "according_to_plan": new_plan or None,
-                        "notes": new_notes.strip() or None,
-                    },
-                )
-                st.success("העסקה עודכנה בהצלחה!")
-                st.rerun()
-
-        with b_del:
-            if st.button("מחק שורה", use_container_width=True):
-                delete_trade(sel_id)
-                st.warning("השורה נמחקה.")
-                st.rerun()
-
-
-# === [SEC-04: TAB 2 - NEW TRADE ENTRY WITH AUTO-SNAPSHOT & INDICATOR COMBOS] ===
-def render_new_trade_tab(df_market: pd.DataFrame) -> None:
-    st.markdown("**פתיחת עסקה חדשה — משיכה אוטומטית של צילום המצב הטכני (Auto-Snapshot) וניתוח אינדיקטורים**")
-
-    symbols = df_market["symbol"].tolist() if not df_market.empty else []
-    c_sym, c_btn_auto, c_btn_ai = st.columns([2.2, 1.4, 1.6])
-
-    with c_sym:
-        if symbols:
-            chosen_sym = st.selectbox("בחר מניה מהמאגר", options=symbols, key="nt_symbol_sel")
+            st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
         else:
-            chosen_sym = st.text_input("הזן טיקר", value="MSFT", key="nt_symbol_txt").strip().upper()
+            st.info("אין עדיין עסקאות סגורות להצגה בגרף היומי.")
+        _html("</div>")
 
-    with c_btn_auto:
-        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        if st.button("חשב MACD / CCI / Volume חי", use_container_width=True):
-            with st.spinner("מחשב אינדיקטורים טכניים..."):
-                ind = compute_live_entry_indicators(chosen_sym)
-                st.session_state["nt_macd"] = ind["macd_status"]
-                st.session_state["nt_cci_val"] = ind["cci_value"] if ind["cci_value"] is not None else 0.0
-                st.session_state["nt_cci_st"] = ind["cci_status"]
-                st.session_state["nt_vol_tr"] = ind["volume_trend"]
-                st.toast("האינדיקטורים עודכנו אוטומטית!")
+    # --- Chart 2: Equity Curve with Green (Profit), Red (Loss), Sky-Blue (Deposit) ---
+    with col_eq:
+        _html('<div class="jh-card" style="padding-bottom:8px;">')
+        hdr_c1, hdr_c2 = st.columns([1.4, 1.3])
+        with hdr_c1:
+            _html('<div class="jh-title" style="font-size:0.95rem; color:#F8FAFC; margin-top:4px;">צמיחת הון - Equity Curve</div>')
+        with hdr_c2:
+            eq_mode = st.radio(
+                "מצב גרף",
+                ["כולל הפקדות", "רווח/הפסד מסחר בלבד"],
+                horizontal=True,
+                label_visibility="collapsed",
+                key="eq_curve_mode",
+            )
 
-    with c_btn_ai:
-        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-        if st.button("זהה נרות עם Gemini AI", use_container_width=True):
-            with st.spinner("מנתח 12 נרות אחרונים..."):
-                ok, c_pat, c_trd, reason = analyze_candles_with_gemini(
-                    chosen_sym, st.session_state.get("user_candle_summary", "")
-                )
-                if ok:
-                    st.session_state["nt_candle"] = c_pat
-                    st.session_state["nt_candle_tr"] = c_trd
-                    st.success(f"זיהוי AI: {reason}")
+        events = []
+        if eq_mode == "כולל הפקדות" and not df_cash.empty:
+            for _, r in df_cash.iterrows():
+                dt_v = pd.to_datetime(r["tx_date"], errors="coerce")
+                amt = float(r["amount_usd"])
+                if pd.notna(dt_v) and amt > 0:
+                    signed_amt = amt if r["tx_type"] == "Deposit" else -amt
+                    events.append({"dt": dt_v, "kind": "deposit", "delta": signed_amt})
+
+        if not closed_df.empty:
+            for _, r in closed_df.iterrows():
+                dt_v = pd.to_datetime(r["close_date"], errors="coerce")
+                pnl_v = float(r["net_pnl"]) if pd.notna(r.get("net_pnl")) else 0.0
+                if pd.notna(dt_v):
+                    events.append({"dt": dt_v, "kind": "trade", "delta": pnl_v})
+
+        if events:
+            ev_df = pd.DataFrame(events).sort_values("dt")
+            points = []
+            running_eq = 0.0
+            for dt_val, grp in ev_df.groupby("dt"):
+                dep_d = float(grp[grp["kind"] == "deposit"]["delta"].sum())
+                trd_d = float(grp[grp["kind"] == "trade"]["delta"].sum())
+                if dep_d != 0:
+                    running_eq += dep_d
+                    points.append(
+                        {
+                            "label": dt_val.strftime("%d/%m/%Y"),
+                            "y": round(running_eq, 2),
+                            "kind": "deposit",
+                            "delta": round(dep_d, 2),
+                        }
+                    )
+                if trd_d != 0 or dep_d == 0:
+                    running_eq += trd_d
+                    points.append(
+                        {
+                            "label": dt_val.strftime("%d/%m/%Y"),
+                            "y": round(running_eq, 2),
+                            "kind": "profit" if trd_d >= 0 else "loss",
+                            "delta": round(trd_d, 2),
+                        }
+                    )
+
+            fig_eq = go.Figure()
+            # Draw segment-by-segment colored lines
+            for i in range(1, len(points)):
+                p0 = points[i - 1]
+                p1 = points[i]
+                if p1["kind"] == "deposit":
+                    seg_color = "#38BDF8"  # Sky blue for deposit jump
+                elif p1["y"] >= p0["y"]:
+                    seg_color = "#10B981"  # Green for trading profit
                 else:
-                    st.info(reason)
+                    seg_color = "#EF4444"  # Red for trading loss
 
-    with st.expander("סיכום הנרות האישי שלך (עבור זיהוי Gemini AI)", expanded=False):
-        st.text_area(
-            "הדבק כאן את כללי זיהוי הנרות מהסיכום שלך (לדוגמה: הגדרות Doji, Hammer, Morning Star וכו')",
-            height=110,
-            key="user_candle_summary",
-        )
+                fig_eq.add_trace(
+                    go.Scatter(
+                        x=[i - 1, i],
+                        y=[p0["y"], p1["y"]],
+                        mode="lines",
+                        line=dict(color=seg_color, width=3),
+                        hoverinfo="skip",
+                        showlegend=False,
+                    )
+                )
 
-    # Pull snapshot defaults from stocks_snapshot
-    snap_row = df_market[df_market["symbol"] == chosen_sym].iloc[0] if (not df_market.empty and chosen_sym in symbols) else None
-    def_price = float(snap_row["display_price"]) if (snap_row is not None and pd.notna(snap_row.get("display_price"))) else 100.0
-    def_atr = float(snap_row["atr_14"]) if (snap_row is not None and pd.notna(snap_row.get("atr_14"))) else 2.0
-    comp_name = str(snap_row.get("company_name") or chosen_sym) if snap_row is not None else chosen_sym
-
-    # Core Execution Fields
-    r1_1, r1_2, r1_3, r1_4 = st.columns(4)
-    with r1_1:
-        entry_dt = st.date_input("תאריך כניסה", value=date.today(), key="nt_date")
-    with r1_2:
-        direction = st.selectbox("כיוון עסקה", ["Long", "Short"], key="nt_dir")
-    with r1_3:
-        entry_p = st.number_input("מחיר כניסה ($)", min_value=0.01, value=round(def_price, 2), step=0.1, key="nt_ep")
-    with r1_4:
-        qty = st.number_input("כמות מניות", min_value=0.0001, value=1.0, step=0.5, format="%.4f", key="nt_qty")
-
-    r2_1, r2_2, r2_3, r2_4 = st.columns(4)
-    with r2_1:
-        def_sl = round(max(0.01, entry_p - (1.5 * def_atr)), 2)
-        stop_loss = st.number_input("Stop Loss ($)", min_value=0.0, value=def_sl, step=0.1, key="nt_sl")
-    with r2_2:
-        def_tp = round(entry_p + (4.5 * def_atr), 2)
-        take_profit = st.number_input("Take Profit ($)", min_value=0.0, value=def_tp, step=0.1, key="nt_tp")
-    with r2_3:
-        fees_in = st.number_input("עמלת קנייה ($)", min_value=0.0, value=0.0, step=0.5, key="nt_fees")
-    with r2_4:
-        risk = abs(entry_p - stop_loss)
-        reward = abs(take_profit - entry_p)
-        rr_str = f"1:{(reward / risk):.2f}" if risk > 0 and reward > 0 else "--"
-        purchase_amt = round(entry_p * qty, 2)
-        st.markdown(
-            f"<div style='background:#0D111A; border:1px solid #1E2638; border-radius:10px; padding:10px; margin-top:22px; text-align:center;'>"
-            f"<span style='color:#94A3B8; font-size:0.82rem;'>עלות: <b>${purchase_amt:,.2f}</b> | יחס R:R: <b style='color:#10B981;'>{rr_str}</b></span>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("---")
-    st.markdown("**אינדיקטורי הסטאפ והתזמון (בחירה מובנית לניתוח סטטיסטי)**")
-
-    s1_1, s1_2, s1_3, s1_4 = st.columns([1.4, 1.6, 0.9, 1.5])
-    with s1_1:
-        vol_trend = st.selectbox("Volume Trend", VOLUME_TREND_OPTIONS, key="nt_vol_tr")
-    with s1_2:
-        macd_st = st.selectbox("MACD (ויזואלי)", MACD_OPTIONS, key="nt_macd")
-    with s1_3:
-        cci_val = st.number_input("ערך CCI (20)", value=0.0, step=5.0, key="nt_cci_val")
-    with s1_4:
-        cci_st = st.selectbox("מצב CCI", CCI_OPTIONS, key="nt_cci_st")
-
-    s2_1, s2_2, s2_3, s2_4 = st.columns(4)
-    with s2_1:
-        maj_tl = st.selectbox("Major Trend Line", TRENDLINE_OPTIONS, key="nt_maj_tl")
-    with s2_2:
-        min_tl = st.selectbox("Minor Trend Line", TRENDLINE_OPTIONS, key="nt_min_tl")
-    with s2_3:
-        gaps_st = st.selectbox("Gaps", GAPS_OPTIONS, key="nt_gaps")
-    with s2_4:
-        fib_st = st.selectbox("Fibonacci", FIBONACCI_OPTIONS, key="nt_fib")
-
-    s3_1, s3_2, s3_3 = st.columns([1.4, 1.4, 1.8])
-    with s3_1:
-        candle_pat = st.selectbox("Candle (נר אחרון)", CANDLE_OPTIONS, key="nt_candle")
-    with s3_2:
-        candle_tr = st.selectbox("Candle Trend (מגמת נרות)", CANDLE_TREND_OPTIONS, key="nt_candle_tr")
-    with s3_3:
-        trade_notes = st.text_input("הערות כניסה / סיבת סטאפ", placeholder="לדוגמה: פולבק ל-MA50 + חציית MACD מעלה", key="nt_notes")
-
-    if st.button("תעד עסקה חדשה + שמור Snapshot טכני מלא", type="primary", use_container_width=True):
-        # Build snapshot dictionary from stocks_snapshot
-        snap_fields: dict = {}
-        if snap_row is not None:
-            ds1 = f"${float(snap_row['d_s_1']):,.2f}" if pd.notna(snap_row.get("d_s_1")) else "-"
-            dr1 = f"${float(snap_row['d_r_1']):,.2f}" if pd.notna(snap_row.get("d_r_1")) else "-"
-            ws1 = f"${float(snap_row['w_s_1']):,.2f}" if pd.notna(snap_row.get("w_s_1")) else "-"
-            wr1 = f"${float(snap_row['w_r_1']):,.2f}" if pd.notna(snap_row.get("w_r_1")) else "-"
-            snap_fields = {
-                "daily_next_sr": f"S: {ds1} | R: {dr1}",
-                "weekly_next_sr": f"S: {ws1} | R: {wr1}",
-                "ma_20": snap_row.get("ma_20_status"),
-                "ma_50": snap_row.get("ma_50_status"),
-                "ma_150": snap_row.get("ma_150_status"),
-                "ma_200": snap_row.get("ma_200_status"),
-                "rsi": float(snap_row["rsi"]) if pd.notna(snap_row.get("rsi")) else None,
-                "atr_14": float(snap_row["atr_14"]) if pd.notna(snap_row.get("atr_14")) else None,
-                "atr_pct": float(snap_row["atr_pct"]) if pd.notna(snap_row.get("atr_pct")) else None,
-                "atr_squeeze_pct": float(snap_row["atr_squeeze_pct"]) if pd.notna(snap_row.get("atr_squeeze_pct")) else None,
-                "rel_vol_5d": float(snap_row["rel_vol_5d"]) if pd.notna(snap_row.get("rel_vol_5d")) else None,
-                "rel_vol_10d": float(snap_row["rel_vol_10d"]) if pd.notna(snap_row.get("rel_vol_10d")) else None,
-                "rel_vol_15d": float(snap_row["rel_vol_15d"]) if pd.notna(snap_row.get("rel_vol_15d")) else None,
-                "rel_vol_20d": float(snap_row["rel_vol_20d"]) if pd.notna(snap_row.get("rel_vol_20d")) else None,
-                "rel_vol_30d": float(snap_row["rel_vol_30d"]) if pd.notna(snap_row.get("rel_vol_30d")) else None,
-                "signal_status": "Neutral",
-            }
-            for prefix in ("d_s", "d_r", "w_s", "w_r"):
-                for idx in range(1, 6):
-                    col = f"{prefix}_{idx}"
-                    snap_fields[col] = float(snap_row[col]) if pd.notna(snap_row.get(col)) else None
-
-        payload = {
-            "entry_date": entry_dt.isoformat(),
-            "symbol": chosen_sym,
-            "company_name": comp_name,
-            "direction": direction,
-            "entry_price": round(float(entry_p), 4),
-            "quantity": round(float(qty), 4),
-            "purchase_amount": purchase_amt,
-            "stop_loss": round(float(stop_loss), 2) if stop_loss > 0 else None,
-            "take_profit": round(float(take_profit), 2) if take_profit > 0 else None,
-            "rr_ratio": rr_str if rr_str != "--" else None,
-            "fees": round(float(fees_in), 2),
-            "status": "Open",
-            "notes": trade_notes.strip() or None,
-            "volume_trend": vol_trend,
-            "macd_status": macd_st,
-            "cci_value": round(float(cci_val), 1),
-            "cci_status": cci_st,
-            "major_trend_line": maj_tl,
-            "minor_trend_line": min_tl,
-            "gaps_status": gaps_st,
-            "fibonacci_status": fib_st,
-            "candle_pattern": candle_pat,
-            "candle_trend": candle_tr,
-            **snap_fields,
-        }
-        insert_trade(payload)
-        st.success(f"העסקה ב-{chosen_sym} נשמרה בהצלחה יחד עם צילום המצב הטכני המלא!")
-        st.rerun()
-
-
-# === [SEC-05: TAB 3 - EDUCATIONAL INDICATOR & SIGNAL SYNERGY GUIDE] ===
-def render_indicator_guide_tab() -> None:
-    st.markdown("### שילוב MACD + CCI (20) + RSI (14) לבניית איתותי מסחר")
-    st.caption("טבלת הייחוס המהירה לבדיקת איכות הסטאפ לפני כניסה לעסקה (ובהמשך בבסיס מנוע הציון של שלב 5):")
-
-    syn_df = pd.DataFrame(SIGNAL_SYNERGY_MATRIX).rename(
-        columns={
-            "setup": "תרחיש / סוג איתות",
-            "macd": "מצב MACD",
-            "cci": "מצב CCI (20)",
-            "rsi": "טווח RSI (14)",
-            "meaning": "משמעות ופעולה מומלצת",
-        }
-    )
-    st.dataframe(syn_df, use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-    for sec in INDICATOR_GUIDE_SECTIONS:
-        cards_html = []
-        for item_title, color, desc in sec["items"]:
-            cards_html.append(
-                f'<div style="background:#0D111A; border:1px solid #1E2638; border-right:4px solid {color}; border-radius:10px; padding:12px 14px; margin-bottom:8px;">'
-                f'<div style="font-size:0.95rem; font-weight:800; color:{color}; margin-bottom:4px;">{html.escape(item_title)}</div>'
-                f'<div style="font-size:0.9rem; color:#E2E8F0; line-height:1.55;">{html.escape(desc)}</div>'
-                f'</div>'
+            # Overlay markers with rich Hebrew hover tooltips
+            pt_colors = [
+                "#38BDF8" if p["kind"] == "deposit" else ("#10B981" if p["kind"] == "profit" else "#EF4444")
+                for p in points
+            ]
+            pt_symbols = ["diamond" if p["kind"] == "deposit" else "circle" for p in points]
+            pt_texts = [
+                f"{p['label']}<br>{'הפקדה' if p['kind'] == 'deposit' else 'תוצאת מסחר'}: {p['delta']:+,.2f}$<br>שווי מצטבר: ${p['y']:,.2f}"
+                for p in points
+            ]
+            fig_eq.add_trace(
+                go.Scatter(
+                    x=list(range(len(points))),
+                    y=[p["y"] for p in points],
+                    mode="markers",
+                    marker=dict(color=pt_colors, size=7, symbol=pt_symbols, line=dict(width=1, color="#0B0E14")),
+                    text=pt_texts,
+                    hovertemplate="%{text}<extra></extra>",
+                    showlegend=False,
+                )
             )
 
-        _html(
-            f"""
-            <div class="profile-box">
-                <div style="font-size:1.08rem; font-weight:800; color:#F8FAFC; margin-bottom:4px;">{html.escape(sec["title"])}</div>
-                <div style="font-size:0.84rem; color:#94A3B8; margin-bottom:12px;">{html.escape(sec["subtitle"])}</div>
-                {"".join(cards_html)}
-            </div>
-            """
-        )
+            step = max(1, len(points) // 10)
+            tick_idx = list(range(0, len(points), step))
+            tick_lbl = [points[idx]["label"] for idx in tick_idx]
 
-
-# === [SEC-06: TAB 4 - CASH DEPOSITS & GOOGLE SHEETS CSV IMPORTER] ===
-def render_cash_and_import_tab(df_cash: pd.DataFrame) -> None:
-    c_left, c_right = st.columns([1.2, 1.3])
-
-    with c_left:
-        st.markdown("#### תיעוד הפקדה או משיכת מזומן (Cash)")
-        tx_dt = st.date_input("תאריך תנועה", value=date.today(), key="cash_tx_dt")
-        tx_tp = st.selectbox("סוג תנועה", ["Deposit (הפקדה)", "Withdrawal (משיכה)"], key="cash_tx_tp")
-        tx_amt = st.number_input("סכום בדולרים ($)", min_value=1.0, value=500.0, step=50.0, key="cash_tx_amt")
-        tx_nt = st.text_input("הערה", placeholder="לדוגמה: העברה חודשית לחשבון המסחר", key="cash_tx_nt")
-
-        if st.button("שמור תנועת מזומן", type="primary", use_container_width=True):
-            clean_type = "Deposit" if "Deposit" in tx_tp else "Withdrawal"
-            insert_cash_tx(tx_dt.isoformat(), clean_type, tx_amt, tx_nt)
-            st.success("תנועת המזומן נשמרה!")
-            st.rerun()
-
-        if not df_cash.empty:
-            st.markdown("**היסטוריית הפקדות ומשיכות:**")
-            disp_c = df_cash[["tx_date", "tx_type", "amount_usd", "related_symbol", "notes"]].rename(
-                columns={
-                    "tx_date": "תאריך",
-                    "tx_type": "סוג",
-                    "amount_usd": "סכום ($)",
-                    "related_symbol": "טיקר מקושר",
-                    "notes": "הערה",
-                }
+            fig_eq.update_layout(
+                height=265,
+                margin=dict(l=12, r=12, t=6, b=36),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Assistant, Rubik, sans-serif", color="#94A3B8", size=11),
+                xaxis=dict(
+                    showgrid=False,
+                    tickmode="array",
+                    tickvals=tick_idx,
+                    ticktext=tick_lbl,
+                    tickangle=-35,
+                    tickfont=dict(size=10),
+                ),
+                yaxis=dict(showgrid=True, gridcolor="#1E2638", zeroline=True, zerolinecolor="#334155"),
             )
-            st.dataframe(disp_c, use_container_width=True, hide_index=True)
-
-    with c_right:
-        st.markdown("#### ייבוא היסטוריה מגיליון Google Sheets (לשונית Journal)")
-        st.info(
-            "ייצא את לשונית **Journal** לקובץ CSV והעלה אותו כאן. "
-            "המערכת תייבא אוטומטית את כל העסקאות הפתוחות והסגורות, תנקה תאים ריקים, "
-            "ותחלץ אוטומטית את כל ההפקדות מעמודת **Cash** לטבלת המזומנים (ללא כפילויות)."
-        )
-        uploaded_csv = st.file_uploader("בחר קובץ CSV של יומן המסחר", type=["csv"], key="journal_csv_uploader")
-        if uploaded_csv is not None:
-            df_up = pd.read_csv(uploaded_csv)
-            st.caption(f"זוהו {len(df_up)} שורות בקובץ.")
-            if st.button("הפעל ייבוא מלא ל-Supabase", type="primary", use_container_width=True):
-                with st.spinner("מייבא עסקאות והפקדות מזומן..."):
-                    n_trades, n_cash = import_journal_csv(df_up)
-                    st.success(f"הייבוא הושלם! נוספו {n_trades} עסקאות ו-{n_cash} תנועות הפקדה.")
-                    st.rerun()
+            st.plotly_chart(fig_eq, use_container_width=True, config={"displayModeBar": False})
+            _html(
+                '<div style="display:flex; gap:16px; justify-content:flex-end; font-size:0.75rem; color:#94A3B8; padding:0 8px 4px 8px;">'
+                '<span><b style="color:#10B981;">●</b> רווח מעסקה</span>'
+                '<span><b style="color:#EF4444;">●</b> הפסד מעסקה</span>'
+                '<span><b style="color:#38BDF8;">◆</b> הפקדת הון</span>'
+                '</div>'
+            )
+        else:
+            st.info("אין עדיין נתונים להצגת עקומת ההון.")
+        _html("</div>")
 
 
-# === [SEC-07: MAIN PAGE ORCHESTRATION] ===
-def main() -> None:
+# === [SEC-05: MAIN JOURNAL HOME DASHBOARD VIEW] ===
+def render_journal_home() -> None:
+    inject_journal_home_css()
     df_market = load_market_dataframe()
     price_map: dict[str, float] = {}
     if not df_market.empty:
@@ -589,28 +578,216 @@ def main() -> None:
                 price_map[str(r["symbol"]).upper()] = float(r["display_price"])
 
     df_trades, df_cash = load_journal_data()
-    render_journal_kpis(df_trades, df_cash, price_map)
+    m = compute_dashboard_metrics(df_trades, df_cash, price_map)
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        [
-            "פוזיציות ויומן עסקאות",
-            "פתיחת עסקה חדשה (+ Auto-Snapshot)",
-            "מדריך MACD / CCI / RSI ושילוב איתותים",
-            "הפקדות מזומן וייבוא CSV",
-        ]
-    )
+    # Top Header & Action Buttons
+    hdr_left, btn_col1, btn_col2 = st.columns([2.6, 1.1, 1.0])
+    with hdr_left:
+        _html(
+            '<div style="font-size:1.35rem; font-weight:800; color:#F8FAFC; padding-top:4px;">'
+            'יומן מסחר - עמוד הבית'
+            '</div>'
+        )
+    with btn_col1:
+        if st.button("＋ פתיחת עסקה חדשה", type="primary", use_container_width=True):
+            open_new_trade_dialog(df_market)
+    with btn_col2:
+        if st.button("＋ הפקדה לחשבון", use_container_width=True):
+            open_deposit_dialog()
 
-    with tab1:
-        render_trades_tab(df_trades, price_map)
+    # === ROW 1: 8 Capital, P/L, Tax, Fees & Deposits Cards (4 x 2 Grid) ===
+    row1_cards = [
+        (
+            "שווי חשבון - Account Value",
+            _fmt_usd(m["account_value"]),
+            "#F8FAFC",
+            "הון פנוי + שווי פוזיציות פתוחות",
+        ),
+        (
+            "הון מושקע - Invested Capital",
+            _fmt_usd(m["invested_open"]),
+            "#60A5FA",
+            f"מושקע כעת ב-{m['n_open']} פוזיציות",
+        ),
+        (
+            "הון פנוי - Available Cash",
+            _fmt_usd(m["available_cash"]),
+            "#38BDF8" if m["available_cash"] >= 0 else "#EF4444",
+            "מזומן זמין לפתיחת עסקאות",
+        ),
+        (
+            "רווח / הפסד כולל - Total Net P/L",
+            _fmt_usd(m["realized_pnl"], signed=True),
+            "#10B981" if m["realized_pnl"] >= 0 else "#EF4444",
+            "נטו ממומש לאחר מס ועמלות",
+        ),
+        (
+            "רווח / הפסד פתוח - Open P/L",
+            _fmt_usd(m["open_pnl"], signed=True),
+            "#10B981" if m["open_pnl"] >= 0 else "#EF4444",
+            "שינוי חי בעסקאות הפעילות כרגע",
+        ),
+        (
+            "מס ששולם - Tax Paid",
+            _fmt_usd(m["tax_paid"]),
+            "#F59E0B",
+            "סה״כ מס שנוכה מעסקאות סגורות",
+        ),
+        (
+            "עמלות - Commissions",
+            _fmt_usd(m["fees_paid"]),
+            "#CBD5E1",
+            "סה״כ עמלות קנייה ומכירה",
+        ),
+        (
+            "סה״כ הפקדות - Total Deposits",
+            _fmt_usd(m["total_deposits"]),
+            "#A78BFA",
+            "סך כל ההפקדות לחשבון המסחר",
+        ),
+    ]
 
-    with tab2:
-        render_new_trade_tab(df_market)
+    for batch_start in (0, 4):
+        cols = st.columns(4)
+        for col, (title, val_s, color, sub) in zip(cols, row1_cards[batch_start : batch_start + 4]):
+            with col:
+                _html(
+                    f"""
+                    <div class="jh-card">
+                        <div class="jh-title">{title}</div>
+                        <div class="jh-value" style="color:{color};">{val_s}</div>
+                        <div class="jh-sub">{sub}</div>
+                    </div>
+                    """
+                )
 
-    with tab3:
-        render_indicator_guide_tab()
+    # === ROW 2: 6 Performance & Risk Cards (3 x 2 Grid) ===
+    row2_cards = [
+        (
+            "אחוזי הצלחה - Win Rate",
+            f"{m['win_rate']:.1f}%",
+            "#10B981" if m["win_rate"] >= 50 else "#F59E0B",
+            f"<span style='color:#10B981; font-weight:700;'>{m['n_wins']} רווחיות</span> &nbsp;|&nbsp; <span style='color:#EF4444; font-weight:700;'>{m['n_losses']} מפסידות</span>",
+        ),
+        (
+            "כמות טריידים - Total Trades",
+            f"{m['n_total']}",
+            "#F8FAFC",
+            f"<span style='color:#60A5FA; font-weight:700;'>{m['n_open']} פתוחים</span> &nbsp;|&nbsp; <span style='color:#94A3B8; font-weight:700;'>{m['n_closed']} סגורים</span>",
+        ),
+        (
+            "חשיפה נוכחית - Current Exposure",
+            f"{m['exposure_pct']:.1f}%",
+            "#38BDF8" if m["exposure_pct"] <= 80 else "#F59E0B",
+            "שיעור ההון המושקע מתוך שווי החשבון",
+        ),
+        (
+            "ציון עקביות - Consistency Score",
+            f"{m['consistency_score']:.1f}",
+            "#10B981" if m["consistency_score"] >= 75 else "#60A5FA",
+            f"עמידה בתוכנית המסחר: {m['plan_rate']:.0f}%",
+        ),
+        (
+            "ממוצע עסקה - Avg Win / Loss",
+            f"<span style='color:#10B981;'>+${m['avg_win']:,.2f}</span> <span style='color:#475569;'>/</span> <span style='color:#EF4444;'>-${abs(m['avg_loss']):,.2f}</span>",
+            "#F8FAFC",
+            "ממוצע עסקה מרוויחה מול מפסידה",
+        ),
+        (
+            "הטובה / הגרועה - Best / Worst Trade",
+            f"<span style='color:#10B981;'>+${m['best_val']:,.2f}</span> <span style='color:#475569;'>/</span> <span style='color:#EF4444;'>-${abs(m['worst_val']):,.2f}</span>",
+            "#F8FAFC",
+            f"שיא: {m['best_sym']} &nbsp;|&nbsp; שפל: {m['worst_sym']}",
+        ),
+    ]
 
-    with tab4:
-        render_cash_and_import_tab(df_cash)
+    for batch_start in (0, 3):
+        cols = st.columns(3)
+        for col, (title, val_html, color, sub_html) in zip(cols, row2_cards[batch_start : batch_start + 3]):
+            with col:
+                _html(
+                    f"""
+                    <div class="jh-card">
+                        <div class="jh-title">{title}</div>
+                        <div class="jh-value" style="color:{color}; font-size:1.4rem;">{val_html}</div>
+                        <div class="jh-sub">{sub_html}</div>
+                    </div>
+                    """
+                )
+
+    # === ROW 3: Charts ===
+    render_charts_row(df_trades, df_cash)
+
+    # === ROW 4: Operational Pulse Cards ===
+    p1, p2, p3 = st.columns([1.4, 1.0, 1.0])
+
+    with p1:
+        top_pos = m["open_positions_list"][:4]
+        rows_html = ""
+        if top_pos:
+            for pos in top_pos:
+                c_p = "#10B981" if pos["pnl"] >= 0 else "#EF4444"
+                rows_html += (
+                    f'<div class="jh-pulse-row">'
+                    f'<span style="font-weight:800; color:#F8FAFC;">{pos["symbol"]}</span>'
+                    f'<span style="color:#94A3B8; direction:ltr;">${pos["live_p"]:,.2f}</span>'
+                    f'<span style="font-weight:800; color:{c_p}; direction:ltr;">{pos["pnl"]:+,.2f}$ ({pos["pnl_pct"]:+.1f}%)</span>'
+                    f'</div>'
+                )
+        else:
+            rows_html = '<div class="jh-sub">אין פוזיציות פתוחות כרגע.</div>'
+
+        _html(
+            f"""
+            <div class="jh-card" style="height:100%;">
+                <div class="jh-title">פוזיציות פתוחות מובילות - Active Positions Pulse</div>
+                {rows_html}
+            </div>
+            """
+        )
+
+    with p2:
+        st_color = "#10B981" if m["streak_type"] == "רווחים" else ("#EF4444" if m["streak_type"] == "הפסדים" else "#94A3B8")
+        _html(
+            f"""
+            <div class="jh-card" style="height:100%;">
+                <div class="jh-title">רצף נוכחי ומשמעת - Streak & Discipline</div>
+                <div class="jh-value" style="color:{st_color}; font-size:1.35rem; text-align:right; direction:rtl;">
+                    {m['streak_count']} {m['streak_type']} ברצף
+                </div>
+                <div class="jh-sub" style="margin-top:8px;">
+                    שיעור עמידה בכללי התוכנית: <b style="color:#F8FAFC;">{m['plan_rate']:.1f}%</b><br>
+                    מבוסס על עסקאות סגורות מתועדות
+                </div>
+            </div>
+            """
+        )
+
+    with p3:
+        m_color = "#10B981" if m["month_closed_pnl"] >= 0 else "#EF4444"
+        _html(
+            f"""
+            <div class="jh-card" style="height:100%;">
+                <div class="jh-title">דופק חודשי - Monthly Pulse</div>
+                <div class="jh-value" style="color:{m_color}; font-size:1.4rem;">
+                    {_fmt_usd(m['month_closed_pnl'], signed=True)}
+                </div>
+                <div class="jh-sub" style="margin-top:8px;">
+                    עסקאות שנפתחו החודש: <b style="color:#F8FAFC;">{m['month_opened_cnt']}</b><br>
+                    הפקדות החודש: <b style="color:#38BDF8;">{_fmt_usd(m['month_deposits'])}</b>
+                </div>
+            </div>
+            """
+        )
+
+
+def main() -> None:
+    active = st.session_state.get("active_page", "יומן מסחר - עמוד הבית")
+    if active == "יומן מסחר - פוזיציות ויומן עסקאות":
+        st.markdown("### פוזיציות ויומן עסקאות")
+        st.info("עמוד זה נמצא בהכנה — נבנה אותו בשלב הבא מיד לאחר אישור עמוד הבית.")
+    else:
+        render_journal_home()
 
 
 main()
