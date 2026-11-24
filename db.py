@@ -541,3 +541,74 @@ def sync_single_new_stock(raw_symbol: str) -> tuple[bool, str]:
     sb.table("stocks_snapshot").upsert(snap_payload, on_conflict="symbol").execute()
     clear_market_cache()
     return True, f"המניה {sym} סונכרנה בהצלחה"
+
+def sync_setup_pattern(
+    symbol: str,
+    setup_pattern: str | None,
+    trade_id: int | None = None,
+) -> None:
+    """Bidirectionally syncs Setup pattern between company_profiles (Analytics) and trade_journal (Journal)."""
+    from datetime import datetime, timezone
+
+    sb = get_supabase_client()
+    clean_sym = symbol.split(":")[-1].strip().upper()
+    clean_setup = (
+        setup_pattern.strip()
+        if setup_pattern and setup_pattern.strip() and setup_pattern != "ללא Setup"
+        else None
+    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        sb.table("company_profiles").update({"setup_pattern": clean_setup}).eq("symbol", clean_sym).execute()
+    except Exception:
+        pass
+
+    try:
+        if trade_id is not None:
+            sb.table("trade_journal").update(
+                {"setup_pattern": clean_setup, "updated_at": now_iso}
+            ).eq("id", trade_id).execute()
+
+        open_rows = (
+            sb.table("trade_journal")
+            .select("id")
+            .eq("symbol", clean_sym)
+            .eq("status", "Open")
+            .execute()
+            .data
+            or []
+        )
+        if open_rows:
+            sb.table("trade_journal").update(
+                {"setup_pattern": clean_setup, "updated_at": now_iso}
+            ).eq("symbol", clean_sym).eq("status", "Open").execute()
+        elif trade_id is None:
+            latest = (
+                sb.table("trade_journal")
+                .select("id")
+                .eq("symbol", clean_sym)
+                .order("entry_date", desc=True)
+                .order("id", desc=True)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+            if latest:
+                sb.table("trade_journal").update(
+                    {"setup_pattern": clean_setup, "updated_at": now_iso}
+                ).eq("id", latest[0]["id"]).execute()
+    except Exception:
+        pass
+
+    try:
+        clear_market_cache()
+    except Exception:
+        pass
+
+    try:
+        from journal_helpers import clear_journal_cache
+        clear_journal_cache()
+    except Exception:
+        pass
