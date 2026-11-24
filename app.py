@@ -6,7 +6,7 @@ st.set_page_config(
     page_title="מצב השוק | מעקב ואנליטיקה",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 apply_global_theme()
