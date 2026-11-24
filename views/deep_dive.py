@@ -3,7 +3,13 @@ import html
 from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
-from db import load_market_dataframe, save_manual_levels, refresh_live_prices_tv
+from db import (
+    load_market_dataframe,
+    save_manual_levels,
+    refresh_live_prices_tv,
+    sync_setup_pattern,
+)
+from journal_helpers import SETUP_OPTIONS
 from ui_theme import render_logo_html, format_pct_color
 
 # Inline style constants (self-contained Obsidian Deep Dark theme)
@@ -67,6 +73,7 @@ def render_top_header_card(row: pd.Series) -> None:
     sector = html.escape(str(row.get("sector") or ""))
     industry = html.escape(str(row.get("industry") or ""))
     sub_ind = html.escape(str(row.get("sub_industry") or ""))
+    curr_setup = str(row.get("setup_pattern") or "").strip() if pd.notna(row.get("setup_pattern")) else ""
     summary = html.escape(str(row.get("short_summary") or "אין תקציר עסקי זמין למניה זו."))
     logo_html = render_logo_html(sym, row.get("logo_url"), size=54)
 
@@ -80,6 +87,13 @@ def render_top_header_card(row: pd.Series) -> None:
         '<span class="live-pill"><span class="live-dot"></span>LIVE</span>'
         if is_live
         else '<span class="badge-pill badge-slate">EOD</span>'
+    )
+
+    setup_badge = (
+        f'<span class="badge-pill" style="background:rgba(139,92,246,0.16); border:1px solid rgba(139,92,246,0.45); color:#C4B5FD; direction:ltr; unicode-bidi:isolate;">'
+        f'Setup: {html.escape(curr_setup)}</span>'
+        if curr_setup and curr_setup != "ללא Setup"
+        else ""
     )
 
     earnings_badge = ""
@@ -133,6 +147,7 @@ def render_top_header_card(row: pd.Series) -> None:
             </div>
 
             <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+                {setup_badge}
                 {f'<span class="badge-pill badge-slate">סקטור: {sector}</span>' if sector else ''}
                 {f'<span class="badge-pill badge-slate">תעשייה: {industry}</span>' if industry else ''}
                 {f'<span class="badge-pill badge-blue">תת-תעשייה: {sub_ind}</span>' if sub_ind else ''}
@@ -526,7 +541,7 @@ def main() -> None:
     if default_sym not in symbols:
         default_sym = symbols[0]
 
-    top_c1, top_c2, top_c3 = st.columns([3.0, 1.1, 1.3])
+    top_c1, top_c2, top_c3, top_c4 = st.columns([2.1, 1.8, 1.0, 1.2])
     with top_c1:
         selected_sym = st.selectbox(
             "בחר מניה לניתוח עומק",
@@ -537,17 +552,39 @@ def main() -> None:
         )
         st.session_state["selected_symbol"] = selected_sym
 
+    row = df[df["symbol"] == selected_sym].iloc[0]
+
     with top_c2:
+        saved_setup = (
+            str(row.get("setup_pattern")).strip()
+            if "setup_pattern" in row.index and pd.notna(row.get("setup_pattern")) and str(row.get("setup_pattern")).strip()
+            else "ללא Setup"
+        )
+        if saved_setup not in SETUP_OPTIONS:
+            saved_setup = "ללא Setup"
+
+        chosen_setup = st.selectbox(
+            "תבנית טכנית (Setup)",
+            options=SETUP_OPTIONS,
+            index=SETUP_OPTIONS.index(saved_setup),
+            label_visibility="collapsed",
+            key=f"dd_setup_combo_{selected_sym}",
+        )
+        if chosen_setup != saved_setup:
+            sync_setup_pattern(selected_sym, chosen_setup)
+            st.toast(f"תבנית Setup עבור {selected_sym} עודכנה וסונכרנה ליומן המסחר: {chosen_setup}")
+            st.rerun()
+
+    with top_c3:
         if st.button("רענן מחיר חי", use_container_width=True):
             with st.spinner("מושך מחיר חי..."):
                 refresh_live_prices_tv([selected_sym])
                 st.rerun()
 
-    with top_c3:
+    with top_c4:
         if st.button("חזרה למעקב ואנליטיקה", use_container_width=True):
             st.switch_page("views/screener.py")
 
-    row = df[df["symbol"] == selected_sym].iloc[0]
     raw_manual = row.get("manual_levels")
     manual_levels = raw_manual if isinstance(raw_manual, list) else []
 
