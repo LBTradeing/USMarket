@@ -44,14 +44,28 @@ def apply_global_theme() -> None:
             text-align: right !important;
         }
 
+        /* Desktop Sidebar Width & Clean Collapse */
+        @media (min-width: 769px) {
+            section[data-testid="stSidebar"][aria-expanded="true"] {
+                width: 195px !important;
+                min-width: 195px !important;
+                max-width: 195px !important;
+                transform: none !important;
+                margin: 0 !important;
+            }
+            section[data-testid="stSidebar"][aria-expanded="false"] {
+                display: none !important;
+            }
+        }
+
         /* Uniform Clean White Typography for Sidebar Items (No Icons) */
         [data-testid="stSidebarNav"] {
-            padding-top: 16px !important;
+            padding-top: 8px !important;
         }
         [data-testid="stSidebarNav"] a {
             border-radius: 10px !important;
-            margin: 4px 10px !important;
-            padding: 9px 14px !important;
+            margin: 4px 6px !important;
+            padding: 9px 12px !important;
             direction: rtl !important;
             text-align: right !important;
             transition: background-color 0.15s ease !important;
@@ -80,9 +94,80 @@ def apply_global_theme() -> None:
             display: none !important;
         }
 
-        /* Header Bar Transparency */
-        [data-testid="stHeader"] {
-            background-color: rgba(11, 14, 20, 0.85) !important;
+        /* Header Bar & Sidebar Toggle Controls Visibility */
+        header[data-testid="stHeader"] {
+            background: transparent !important;
+            pointer-events: none !important;
+        }
+        header[data-testid="stHeader"] button,
+        [data-testid="collapsedControl"],
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="stExpandSidebarButton"],
+        [data-testid="stSidebarCollapseButton"] {
+            pointer-events: auto !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            color: #F8FAFC !important;
+        }
+
+        /* Mobile Drawer Behavior (<= 768px) */
+        @media (max-width: 768px) {
+            .block-container {
+                padding-top: 2.9rem !important;
+            }
+
+            /* Subtle Floating Open Button in Top-Right Corner */
+            [data-testid="collapsedControl"],
+            [data-testid="stSidebarCollapsedControl"],
+            [data-testid="stExpandSidebarButton"] {
+                position: fixed !important;
+                top: 10px !important;
+                right: 12px !important;
+                left: auto !important;
+                z-index: 999999 !important;
+                background: rgba(17, 22, 34, 0.94) !important;
+                border: 1px solid #334155 !important;
+                border-radius: 10px !important;
+                padding: 4px 8px !important;
+                box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5) !important;
+                backdrop-filter: blur(8px) !important;
+            }
+
+            /* Completely Hide Sidebar When Collapsed on Mobile */
+            section[data-testid="stSidebar"][aria-expanded="false"] {
+                display: none !important;
+            }
+
+            /* Clean Right-Side Overlay Drawer When Expanded on Mobile */
+            section[data-testid="stSidebar"][aria-expanded="true"] {
+                display: flex !important;
+                position: fixed !important;
+                top: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                left: auto !important;
+                width: 220px !important;
+                min-width: 220px !important;
+                max-width: 80vw !important;
+                height: 100dvh !important;
+                transform: none !important;
+                margin: 0 !important;
+                z-index: 999998 !important;
+                box-shadow: -10px 0 30px rgba(0, 0, 0, 0.75) !important;
+            }
+
+            /* Clear Close Button Inside Open Mobile Drawer */
+            [data-testid="stSidebarHeader"] {
+                display: flex !important;
+                justify-content: flex-end !important;
+                padding: 8px 10px 0 10px !important;
+            }
+            [data-testid="stSidebarCollapseButton"] button {
+                background: rgba(30, 41, 59, 0.85) !important;
+                border: 1px solid #334155 !important;
+                border-radius: 8px !important;
+                color: #F8FAFC !important;
+            }
         }
 
         /* Fix Expander RTL Arrow Spacing */
@@ -327,6 +412,7 @@ def apply_global_theme() -> None:
             background-color: #1E293B !important;
             color: #FFFFFF !important;
         }
+
         /* === DEEP DIVE COMPONENT STYLES (OBSIDIAN DEEP DARK) === */
         .dd-section {
             background-color: #111622;
@@ -509,57 +595,6 @@ def apply_global_theme() -> None:
             padding: 6px 12px;
             border-radius: 8px;
         }
-        /* שמירה על כפתורי השליטה בתפריט גלויים גם כשה-Header שקוף */
-header[data-testid="stHeader"] {
-    background: transparent !important;
-    pointer-events: none !important;
-}
-header[data-testid="stHeader"] button,
-[data-testid="collapsedControl"],
-[data-testid="stSidebarCollapsedControl"],
-[data-testid="stExpandSidebarButton"],
-[data-testid="stSidebarCollapseButton"] {
-    pointer-events: auto !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-}
-
-/* התאמה ייעודית למסכי סלולר (עד 768px) */
-@media (max-width: 768px) {
-    /* כפתור פתיחת תפריט עדין בפינה הימנית העליונה */
-    [data-testid="collapsedControl"],
-    [data-testid="stSidebarCollapsedControl"],
-    [data-testid="stExpandSidebarButton"] {
-        position: fixed !important;
-        top: 12px !important;
-        right: 12px !important;
-        left: auto !important;
-        z-index: 999999 !important;
-        background: rgba(17, 22, 34, 0.92) !important;
-        border: 1px solid #334155 !important;
-        border-radius: 10px !important;
-        padding: 4px 8px !important;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45) !important;
-        backdrop-filter: blur(8px) !important;
-    }
-
-    /* כשהתפריט סגור במובייל - הסתרה מלאה שלא תתפוס מקום */
-    section[data-testid="stSidebar"][aria-expanded="false"] {
-        visibility: hidden !important;
-        pointer-events: none !important;
-        width: 0 !important;
-        min-width: 0 !important;
-    }
-
-    /* כשהתפריט פתוח במובייל - תצוגת מגירה נקייה מעל התוכן */
-    section[data-testid="stSidebar"][aria-expanded="true"] {
-        visibility: visible !important;
-        pointer-events: auto !important;
-        z-index: 999998 !important;
-        max-width: 82vw !important;
-        box-shadow: -8px 0 28px rgba(0, 0, 0, 0.65) !important;
-    }
-}
         </style>
         """,
         unsafe_allow_html=True,
