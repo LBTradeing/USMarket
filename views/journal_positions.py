@@ -11,6 +11,11 @@ from db import (
     sync_setup_pattern,
 )
 from journal_helpers import (
+    CANDLE_OPTIONS,
+    FIBONACCI_OPTIONS,
+    GAPS_OPTIONS,
+    SETUP_OPTIONS,
+    TRENDLINE_OPTIONS,
     compute_live_entry_indicators,
     insert_cash_tx,
     insert_trade,
@@ -18,58 +23,6 @@ from journal_helpers import (
 )
 
 APP_FONT = "'Assistant', 'Rubik', sans-serif"
-
-SETUP_OPTIONS = [
-    "ללא Setup",
-    "Breakout",
-    "Pullback to MA",
-    "VCP (Volatility Contraction)",
-    "Cup & Handle",
-    "Bull Flag / Pennant",
-    "Double Bottom",
-    "Gap & Go",
-    "Support Bounce",
-    "Reversal / Divergence",
-    "אחר",
-]
-
-CANDLESTICK_OPTIONS = [
-    "ללא",
-    "Bullish Engulfing",
-    "Hammer / Pin Bar",
-    "Morning Star",
-    "Inside Bar",
-    "Breakout Marubozu",
-    "Doji / Indecision",
-    "אחר",
-]
-
-TRENDLINE_OPTIONS = [
-    "ללא",
-    "פריצת קו מגמה יורד",
-    "תמיכה על קו מגמה עולה",
-    "פריצת תעלה",
-    "התכנסות משולש",
-    "אחר",
-]
-
-GAP_OPTIONS = [
-    "ללא גאפ פתוח",
-    "Breakaway Gap",
-    "Gap & Go",
-    "מילוי גאפ (Gap Fill)",
-    "Continuation Gap",
-    "אחר",
-]
-
-FIBONACCI_OPTIONS = [
-    "ללא",
-    "תיקון 38.2% מדויק",
-    "תיקון 50.0%",
-    "תיקון 61.8% (Golden)",
-    "הרחבת 161.8%",
-    "אחר",
-]
 
 
 def _html(raw: str) -> None:
@@ -133,7 +86,6 @@ def inject_positions_css() -> None:
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@400;500;600;700;800&family=Rubik:wght@400;500;700;800&display=swap');
 
-        /* Global Font & RTL Enforcement */
         .stApp, .stApp * {{
             font-family: {APP_FONT} !important;
         }}
@@ -171,7 +123,7 @@ def inject_positions_css() -> None:
             justify-content: space-between;
             align-items: center;
             direction: rtl;
-            transition: border-color 0.2s ease, transform 0.15s ease;
+            transition: border-color 0.2s ease;
         }}
         .jp-kpi-card:hover {{
             border-color: #334155;
@@ -251,7 +203,7 @@ def inject_positions_css() -> None:
             background: #111622 !important;
             border: 1px solid #1E2638 !important;
             border-radius: 10px !important;
-            padding: 4px 12px !important;
+            padding: 4px 11px !important;
             margin: 0 !important;
             cursor: pointer !important;
             transition: all 0.15s ease !important;
@@ -270,7 +222,7 @@ def inject_positions_css() -> None:
         }}
         div[data-testid="stVerticalBlock"]:has(> div.element-container .jp-filter-marker) div[role="radiogroup"] label p {{
             color: #94A3B8 !important;
-            font-size: 0.83rem !important;
+            font-size: 0.82rem !important;
             font-weight: 600 !important;
         }}
         .jp-filter-lbl {{
@@ -282,7 +234,7 @@ def inject_positions_css() -> None:
             direction: rtl;
         }}
 
-        /* UNIFIED SINGLE-FRAME TABLE SHELL (Header + Rows in ONE continuous box) */
+        /* UNIFIED SINGLE-FRAME TABLE SHELL */
         div[data-testid="stVerticalBlock"]:has(> div.element-container .jp-unified-table-marker) {{
             background: #0D111A !important;
             border: 1px solid #1E2638 !important;
@@ -295,6 +247,8 @@ def inject_positions_css() -> None:
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
             padding-bottom: 14px;
             border-bottom: 1px solid #1A2234;
             margin-bottom: 0;
@@ -304,6 +258,7 @@ def inject_positions_css() -> None:
             display: flex;
             align-items: center;
             gap: 10px;
+            flex-wrap: wrap;
         }}
         .jp-sec-title {{
             font-size: 1.06rem;
@@ -319,15 +274,26 @@ def inject_positions_css() -> None:
             font-size: 0.8rem;
             font-weight: 800;
         }}
+        .jp-avg-badge {{
+            background: rgba(167, 139, 250, 0.14);
+            color: #C4B5FD;
+            border: 1px solid rgba(167, 139, 250, 0.38);
+            border-radius: 8px;
+            padding: 2px 8px;
+            font-size: 0.72rem;
+            font-weight: 800;
+            display: inline-block;
+            margin-top: 3px;
+        }}
         .jp-sec-hint {{
             font-size: 0.78rem;
             color: #64748B;
         }}
 
-        /* Active Positions Grid Table (8 Columns RTL - Identical Grid & Padding for Header and Rows) */
+        /* Active & Closed Grid Tables (Aligned Header & Rows) */
         .jp-active-grid {{
             display: grid;
-            grid-template-columns: minmax(145px, 1.45fr) minmax(88px, 0.85fr) minmax(52px, 0.5fr) minmax(78px, 0.8fr) minmax(78px, 0.8fr) minmax(98px, 1.0fr) minmax(108px, 1.05fr) minmax(245px, 2.45fr);
+            grid-template-columns: minmax(150px, 1.5fr) minmax(88px, 0.85fr) minmax(52px, 0.5fr) minmax(78px, 0.8fr) minmax(78px, 0.8fr) minmax(98px, 1.0fr) minmax(108px, 1.05fr) minmax(245px, 2.45fr);
             gap: 10px;
             align-items: center;
             direction: rtl;
@@ -336,7 +302,7 @@ def inject_positions_css() -> None:
         }}
         .jp-closed-grid {{
             display: grid;
-            grid-template-columns: minmax(145px, 1.5fr) minmax(125px, 1.25fr) minmax(115px, 1.15fr) minmax(115px, 1.15fr) minmax(125px, 1.25fr) minmax(120px, 1.2fr);
+            grid-template-columns: minmax(150px, 1.5fr) minmax(125px, 1.25fr) minmax(130px, 1.3fr) minmax(115px, 1.15fr) minmax(130px, 1.3fr) minmax(120px, 1.15fr);
             gap: 10px;
             align-items: center;
             direction: rtl;
@@ -471,7 +437,7 @@ def inject_positions_css() -> None:
             color: #EF4444;
         }}
 
-        /* SL / TP Range Bar & Glowing Dot (Centered, Stretched & LTR-Aligned with Red->Green Bar) */
+        /* SL / TP Range Bar & Glowing Dot */
         .jp-sltp-cell-pad {{
             width: 100%;
             padding: 0 12px;
@@ -539,112 +505,267 @@ def inject_positions_css() -> None:
             box-shadow: 0 0 8px #38BDF8, 0 0 2px #FFFFFF;
         }}
 
-        /* Deep Dive Modal Styling */
+        /* =====================================================================
+           DEEP DIVE MODAL STYLING — 1:1 VISUAL MATCH TO PROTOTYPE C82
+           ===================================================================== */
         div[data-testid="stDialog"] div[role="dialog"] {{
-            background: #0B0F19 !important;
+            background: #080B12 !important;
             border: 1px solid #1E293B !important;
             border-radius: 20px !important;
-            max-width: 1180px !important;
+            max-width: 1160px !important;
             width: 94vw !important;
         }}
-        .dd-top-cards-grid {{
+        .c82-top-cards {{
             display: grid;
             grid-template-columns: repeat(7, minmax(0, 1fr));
             gap: 10px;
-            margin: 12px 0 16px 0;
+            margin: 14px 0 16px 0;
             direction: rtl;
         }}
-        .dd-mini-card {{
-            background: #101624;
-            border: 1px solid #1E293B;
+        .c82-stat-card {{
+            background: #0D111A;
+            border: 1px solid #1E2638;
             border-radius: 14px;
-            padding: 12px 12px;
+            padding: 13px 14px;
             text-align: right;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            min-height: 86px;
         }}
-        .dd-mini-title {{
-            font-size: 0.75rem;
-            color: #94A3B8;
+        .c82-stat-lbl {{
+            font-size: 0.78rem;
             font-weight: 600;
-            margin-bottom: 5px;
+            color: #94A3B8;
+            margin-bottom: 6px;
         }}
-        .dd-mini-val {{
-            font-size: 1.06rem;
+        .c82-stat-val {{
+            font-size: 1.18rem;
             font-weight: 800;
             color: #F8FAFC;
+            line-height: 1.2;
         }}
-        .dd-panel-box {{
-            background: #0F1522;
-            border: 1px solid #1E293B;
+        .c82-stat-sub {{
+            font-size: 0.73rem;
+            color: #64748B;
+            margin-top: 4px;
+        }}
+
+        /* Main Panel Container (Prototype C82) */
+        .c82-panel {{
+            background: #0D111A;
+            border: 1px solid #1E2638;
             border-radius: 16px;
-            padding: 16px 18px;
+            padding: 18px 20px;
             margin-bottom: 14px;
             direction: rtl;
+            text-align: right;
         }}
-        .dd-snap-5grid {{
-            display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-            gap: 10px;
-            margin: 12px 0;
-            direction: rtl;
-        }}
-        .dd-snap-card {{
-            background: #0A0E17;
-            border: 1px solid #1A2234;
-            border-radius: 12px;
-            padding: 11px 12px;
-            text-align: center;
-        }}
-        .dd-ma-4grid {{
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 10px;
-            margin-top: 8px;
-            direction: rtl;
-        }}
-        .dd-ma-pill {{
+        .c82-panel-hdr {{
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 14px;
+            margin-bottom: 14px;
+            direction: rtl;
+        }}
+        .c82-panel-title {{
+            font-size: 1.06rem;
+            font-weight: 800;
+            color: #F8FAFC;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        .c82-panel-sub {{
+            font-size: 0.78rem;
+            color: #64748B;
+        }}
+
+        /* 5 Snapshot Metric Cards */
+        .c82-snap-5 {{
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+            direction: rtl;
+        }}
+        .c82-snap-tile {{
+            background: #0A0E17;
+            border: 1px solid #1A2234;
+            border-radius: 12px;
+            padding: 14px 12px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 92px;
+        }}
+        .c82-snap-lbl {{
+            font-size: 0.76rem;
+            font-weight: 600;
+            color: #94A3B8;
+            margin-bottom: 7px;
+        }}
+        .c82-snap-num {{
+            font-size: 1.24rem;
+            font-weight: 800;
+            line-height: 1.2;
+        }}
+        .c82-snap-note {{
+            font-size: 0.72rem;
+            color: #64748B;
+            margin-top: 4px;
+        }}
+
+        /* 4 Moving Average Pills */
+        .c82-ma-4 {{
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 8px;
+            direction: rtl;
+        }}
+        .c82-ma-pill {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 9px 16px;
             border-radius: 10px;
-            font-size: 0.82rem;
+            font-size: 0.85rem;
             font-weight: 800;
         }}
-        .dd-ma-above {{
-            background: rgba(16, 185, 129, 0.10);
+        .c82-ma-above {{
+            background: rgba(16, 185, 129, 0.08);
             border: 1px solid rgba(16, 185, 129, 0.35);
             color: #10B981;
         }}
-        .dd-ma-below {{
-            background: rgba(239, 68, 68, 0.10);
+        .c82-ma-below {{
+            background: rgba(239, 68, 68, 0.08);
             border: 1px solid rgba(239, 68, 68, 0.35);
             color: #EF4444;
         }}
-        .dd-ma-neutral {{
+        .c82-ma-none {{
             background: #0A0E17;
-            border: 1px solid #1E293B;
+            border: 1px solid #1A2234;
             color: #64748B;
         }}
+
+        /* Two Side-by-Side Cards (S/R Levels & Technical Setup Tags) */
+        .c82-two-col {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-bottom: 14px;
+            direction: rtl;
+        }}
+        .c82-sr-row {{
+            background: #0A0E17;
+            border: 1px solid #1A2234;
+            border-radius: 10px;
+            padding: 11px 16px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            direction: rtl;
+        }}
+        .c82-sr-row:last-child {{
+            margin-bottom: 0;
+        }}
+        .c82-sr-lbl {{
+            font-size: 0.84rem;
+            font-weight: 700;
+            color: #CBD5E1;
+        }}
+        .c82-sr-val {{
+            font-size: 0.92rem;
+            font-weight: 800;
+            color: #38BDF8;
+            direction: ltr;
+        }}
+        .c82-tags-2x2 {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            direction: rtl;
+        }}
+        .c82-tag-box {{
+            background: #0A0E17;
+            border: 1px solid #1A2234;
+            border-radius: 10px;
+            padding: 11px 14px;
+            text-align: right;
+        }}
+        .c82-tag-lbl {{
+            font-size: 0.74rem;
+            color: #64748B;
+            margin-bottom: 4px;
+        }}
+        .c82-tag-val {{
+            font-size: 0.9rem;
+            font-weight: 800;
+            color: #F8FAFC;
+        }}
+
+        /* Bottom Journal 3-Column Cards */
+        .c82-journal-3 {{
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            direction: rtl;
+        }}
+        .c82-j-box {{
+            background: #0A0E17;
+            border: 1px solid #1A2234;
+            border-radius: 12px;
+            padding: 14px 16px;
+            min-height: 112px;
+            text-align: right;
+        }}
+        .c82-j-title {{
+            font-size: 0.84rem;
+            font-weight: 800;
+            color: #CBD5E1;
+            margin-bottom: 8px;
+        }}
+        .c82-j-body {{
+            font-size: 0.85rem;
+            color: #94A3B8;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }}
+
+        /* Status & Plan Badges */
         .dd-plan-badge-ok {{
             background: rgba(16, 185, 129, 0.14);
-            border: 1px solid rgba(16, 185, 129, 0.4);
+            border: 1px solid rgba(16, 185, 129, 0.45);
             color: #10B981;
-            padding: 3px 10px;
+            padding: 4px 12px;
             border-radius: 999px;
             font-size: 0.78rem;
             font-weight: 800;
+            display: inline-block;
         }}
         .dd-plan-badge-no {{
             background: rgba(239, 68, 68, 0.14);
-            border: 1px solid rgba(239, 68, 68, 0.4);
+            border: 1px solid rgba(239, 68, 68, 0.45);
             color: #EF4444;
-            padding: 3px 10px;
+            padding: 4px 12px;
             border-radius: 999px;
             font-size: 0.78rem;
             font-weight: 800;
+            display: inline-block;
+        }}
+        .dd-plan-badge-muted {{
+            background: #0A0E17;
+            border: 1px solid #1E2638;
+            color: #64748B;
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            display: inline-block;
         }}
         .dd-status-badge-open {{
             background: rgba(56, 189, 248, 0.14);
@@ -683,6 +804,8 @@ def _build_sltp_html(
     has_tp = tp_val is not None and pd.notna(tp_val) and float(tp_val) > 0
 
     if not has_sl and not has_tp:
+        if compact:
+            return '<div style="font-size:0.86rem; color:#64748B; font-weight:700;">לא הוגדר SL / TP</div>', "--"
         return (
             '<div class="jp-sltp-cell-pad">'
             '<div style="width:100%; max-width:340px; background:#0A0E17; border:1px dashed #263147; '
@@ -702,6 +825,30 @@ def _build_sltp_html(
     sl_txt = f"SL ${sl:,.2f}" if sl is not None else "SL --"
     tp_txt = f"TP ${tp:,.2f}" if tp is not None else "TP --"
 
+    if sl is not None and tp is not None and tp > sl:
+        raw_pos = ((live_price - sl) / (tp - sl)) * 100.0
+        dot_pct = max(3.0, min(97.0, raw_pos))
+    elif sl is not None:
+        dot_pct = 20.0 if live_price <= sl else 55.0
+    else:
+        dot_pct = 80.0 if live_price >= tp else 45.0
+
+    # Compact card view (1:1 Prototype C82 clean SL | TP + slim bar)
+    if compact:
+        compact_html = (
+            f'<div style="direction:ltr; text-align:left;">'
+            f'<div style="font-size:0.9rem; font-weight:800; color:#F8FAFC; margin-bottom:6px;">'
+            f'<span style="color:#EF4444;">{sl_txt}</span>'
+            f'<span style="color:#475569;"> | </span>'
+            f'<span style="color:#10B981;">{tp_txt}</span>'
+            f'</div>'
+            f'<div class="jp-range-track" style="height:5px;">'
+            f'<div class="jp-range-dot" style="left:{dot_pct:.1f}%; width:9px; height:9px;"></div>'
+            f'</div>'
+            f'</div>'
+        )
+        return compact_html, rr_str
+
     if sl is not None and live_price > 0:
         sl_pct = ((sl - live_price) / live_price) * 100.0
         sl_usd = (sl - entry_price) * qty
@@ -716,20 +863,11 @@ def _build_sltp_html(
     else:
         tp_sub = "--"
 
-    if sl is not None and tp is not None and tp > sl:
-        raw_pos = ((live_price - sl) / (tp - sl)) * 100.0
-        dot_pct = max(3.0, min(97.0, raw_pos))
-    elif sl is not None:
-        dot_pct = 20.0 if live_price <= sl else 55.0
-    else:
-        dot_pct = 80.0 if live_price >= tp else 45.0
-
-    rr_badge = f'<span class="jp-rr-chip">R:R {rr_str}</span>' if not compact else ""
     wrap_inner = (
         f'<div class="jp-sltp-wrap">'
         f'<div class="jp-sltp-top">'
         f'<span class="jp-sl-lbl">{sl_txt}</span>'
-        f'{rr_badge}'
+        f'<span class="jp-rr-chip">R:R {rr_str}</span>'
         f'<span class="jp-tp-lbl">{tp_txt}</span>'
         f'</div>'
         f'<div class="jp-sltp-mid">'
@@ -741,8 +879,7 @@ def _build_sltp_html(
         f'</div>'
         f'</div>'
     )
-    html_block = wrap_inner if compact else f'<div class="jp-sltp-cell-pad">{wrap_inner}</div>'
-    return html_block, rr_str
+    return f'<div class="jp-sltp-cell-pad">{wrap_inner}</div>', rr_str
 
 
 # === [SEC-03: TOP ACTION MODALS (NEW TRADE & DEPOSIT)] ===
@@ -887,7 +1024,7 @@ def _open_new_trade_modal(df_market: pd.DataFrame) -> None:
         st.rerun()
 
 
-# === [SEC-04: DEEP DIVE & FULL TRADE MANAGEMENT LARGE MODAL] ===
+# === [SEC-04: DEEP DIVE & FULL TRADE MANAGEMENT LARGE MODAL (1:1 PROTOTYPE C82)] ===
 def _safe_update_trade(trade_id: int, update_dict: dict, existing_cols: set[str]) -> None:
     sb = get_supabase_client()
     filtered = {k: v for k, v in update_dict.items() if k in existing_cols}
@@ -908,6 +1045,14 @@ def _safe_update_trade(trade_id: int, update_dict: dict, existing_cols: set[str]
             sb.table("trade_journal").update(fallback).eq("id", trade_id).execute()
 
 
+def _pick_metric_val(trade_row: pd.Series, market_row: pd.Series | None, col_name: str):
+    if pd.notna(trade_row.get(col_name)):
+        return trade_row[col_name]
+    if market_row is not None and pd.notna(market_row.get(col_name)):
+        return market_row[col_name]
+    return None
+
+
 @st.dialog("כרטיסיית ניתוח עומק וניהול עסקה", width="large")
 def open_trade_deep_dive_modal(
     trade_row: pd.Series,
@@ -916,7 +1061,7 @@ def open_trade_deep_dive_modal(
     existing_cols: set[str],
 ) -> None:
     tid = int(trade_row["id"])
-    sym = str(trade_row["symbol"]).upper()
+    sym = str(trade_row["symbol"]).split(":")[-1].strip().upper()
     comp_name = str(trade_row.get("company_name") or (market_row.get("company_name") if market_row is not None else sym) or sym)
     logo_url = str(market_row.get("logo_url") or "") if market_row is not None and pd.notna(market_row.get("logo_url")) else ""
     status = str(trade_row.get("status") or "Open")
@@ -949,9 +1094,11 @@ def open_trade_deep_dive_modal(
 
     plan_val = str(trade_row.get("according_to_plan") or "Yes")
     is_plan_ok = plan_val == "Yes"
+    edit_mode_key = f"dd_edit_mode_{tid}"
+    is_edit_mode = st.session_state.get(edit_mode_key, False)
 
-    # === TOP HEADER BAR ===
-    hdr_right, hdr_left = st.columns([3.3, 1.1])
+    # === TOP HEADER BAR (Matches Prototype C82 + Close & Edit Actions) ===
+    hdr_right, hdr_mid, hdr_left = st.columns([2.9, 0.95, 0.95])
     with hdr_right:
         logo_inner = (
             f'<img src="{html.escape(logo_url)}" alt="{html.escape(sym)}"/>'
@@ -989,12 +1136,19 @@ def open_trade_deep_dive_modal(
             """
         )
 
+    with hdr_mid:
+        edit_lbl = "👁️ סגור עריכה" if is_edit_mode else "✏️ עריכת נתונים"
+        if st.button(edit_lbl, use_container_width=True, key=f"btn_toggle_edit_{tid}"):
+            st.session_state[edit_mode_key] = not is_edit_mode
+            st.rerun()
+
     with hdr_left:
         if is_open:
             close_toggle_key = f"dd_close_panel_open_{tid}"
             if st.button("🔒 סגירת עסקה", type="primary", use_container_width=True, key=f"btn_toggle_close_{tid}"):
                 st.session_state[close_toggle_key] = not st.session_state.get(close_toggle_key, False)
 
+    # Inline Close Trade Panel
     if is_open and st.session_state.get(f"dd_close_panel_open_{tid}", False):
         with st.container(border=True):
             _html('<div style="font-size:0.98rem; font-weight:800; color:#F8FAFC; margin-bottom:8px; direction:rtl;">סגירת פוזיציה ותיעוד מס / עמלות</div>')
@@ -1044,335 +1198,656 @@ def open_trade_deep_dive_modal(
                     st.session_state[f"dd_close_panel_open_{tid}"] = False
                     st.rerun()
 
-    # === 7 ROUNDED METRIC CARDS IN EXACT ORDER ===
+    # === 7 ROUNDED STAT CARDS IN EXACT ORDER (Prototype C82 Style) ===
     sltp_html_card, rr_val_str = _build_sltp_html(ep, curr_p, qty, sl_curr, tp_curr, compact=True)
     price_lbl_title = "שער חי" if is_open else "שער סגירה"
     pnl_lbl_title = "רווח / הפסד נוכחי" if is_open else "רווח / הפסד נטו"
 
     _html(
         f"""
-        <div class="dd-top-cards-grid">
-            <div class="dd-mini-card">
-                <div class="dd-mini-title">תאריך כניסה</div>
-                <div class="dd-mini-val">{_ltr(entry_dt_str)}</div>
-                <div style="font-size:0.74rem; color:#64748B;">{hold_days} ימים</div>
+        <div class="c82-top-cards">
+            <div class="c82-stat-card">
+                <div class="c82-stat-lbl">תאריך כניסה</div>
+                <div class="c82-stat-val">{_ltr(entry_dt_str)}</div>
+                <div class="c82-stat-sub">{hold_days} ימים</div>
             </div>
-            <div class="dd-mini-card">
-                <div class="dd-mini-title">שער כניסה</div>
-                <div class="dd-mini-val">{_ltr(_fmt_usd(ep))}</div>
-                <div style="font-size:0.74rem; color:#64748B;">עלות ${_fmt_usd(cost_total, decimals=0).replace('$','')}</div>
+            <div class="c82-stat-card">
+                <div class="c82-stat-lbl">שער כניסה</div>
+                <div class="c82-stat-val">{_ltr(_fmt_usd(ep))}</div>
+                <div class="c82-stat-sub">עלות {_ltr(_fmt_usd(cost_total, decimals=0))}</div>
             </div>
-            <div class="dd-mini-card">
-                <div class="dd-mini-title">{price_lbl_title}</div>
-                <div class="dd-mini-val" style="color:#38BDF8;">{_ltr(_fmt_usd(curr_p))}</div>
-                <div style="font-size:0.74rem; color:#64748B;">שווי {_ltr(_fmt_usd(curr_p * qty, decimals=0))}</div>
+            <div class="c82-stat-card">
+                <div class="c82-stat-lbl">{price_lbl_title}</div>
+                <div class="c82-stat-val" style="color:#38BDF8;">{_ltr(_fmt_usd(curr_p))}</div>
+                <div class="c82-stat-sub">שווי {_ltr(_fmt_usd(curr_p * qty, decimals=0))}</div>
             </div>
-            <div class="dd-mini-card">
-                <div class="dd-mini-title">כמות</div>
-                <div class="dd-mini-val">{_ltr(qty_lbl)}</div>
-                <div style="font-size:0.74rem; color:#64748B;">מניות</div>
+            <div class="c82-stat-card">
+                <div class="c82-stat-lbl">כמות</div>
+                <div class="c82-stat-val">{_ltr(qty_lbl)}</div>
+                <div class="c82-stat-sub">מניות</div>
             </div>
-            <div class="dd-mini-card">
-                <div class="dd-mini-title">{pnl_lbl_title}</div>
-                <div class="dd-mini-val" style="color:{pnl_color};">{_ltr(_fmt_usd(pnl_usd, signed=True))}</div>
-                <div style="font-size:0.76rem; font-weight:700; color:{pnl_color};">{_ltr(f"{pnl_pct:+.2f}%")}</div>
+            <div class="c82-stat-card">
+                <div class="c82-stat-lbl">{pnl_lbl_title}</div>
+                <div class="c82-stat-val" style="color:{pnl_color};">{_ltr(_fmt_usd(pnl_usd, signed=True))}</div>
+                <div class="c82-stat-sub" style="color:{pnl_color}; font-weight:700;">{_ltr(f"{pnl_pct:+.2f}%")}</div>
             </div>
-            <div class="dd-mini-card">
-                <div class="dd-mini-title">SL / TP</div>
+            <div class="c82-stat-card">
+                <div class="c82-stat-lbl">SL / TP</div>
                 {sltp_html_card}
             </div>
-            <div class="dd-mini-card">
-                <div class="dd-mini-title">RR</div>
-                <div class="dd-mini-val" style="color:#38BDF8;">{_ltr(rr_val_str)}</div>
-                <div style="font-size:0.74rem; color:#64748B;">יחס סיכוי/סיכון</div>
+            <div class="c82-stat-card">
+                <div class="c82-stat-lbl">RR</div>
+                <div class="c82-stat-val" style="color:#38BDF8;">{_ltr(rr_val_str)}</div>
+                <div class="c82-stat-sub">יחס סיכוי/סיכון</div>
             </div>
         </div>
         """
     )
 
-    # === EDITABLE SL / TP BAR ===
-    sl_col, tp_col, rr_preview_col = st.columns([1.2, 1.2, 1.6])
-    with sl_col:
-        edit_sl = st.number_input(
-            "עריכת Stop Loss ($)",
-            min_value=0.0,
-            value=float(sl_curr) if sl_curr is not None else 0.0,
-            step=0.25,
-            format="%.2f",
-            key=f"dd_edit_sl_{tid}",
-        )
-    with tp_col:
-        edit_tp = st.number_input(
-            "עריכת Take Profit ($)",
-            min_value=0.0,
-            value=float(tp_curr) if tp_curr is not None else 0.0,
-            step=0.25,
-            format="%.2f",
-            key=f"dd_edit_tp_{tid}",
-        )
-    with rr_preview_col:
-        live_rr = "--"
-        if edit_sl > 0 and edit_tp > 0 and ep > edit_sl and edit_tp > ep:
-            live_rr = f"1 : {(edit_tp - ep) / (ep - edit_sl):.2f}"
-        _html(
-            f'<div style="background:#101624; border:1px solid #1E293B; border-radius:12px; padding:10px 14px; '
-            f'margin-top:22px; display:flex; justify-content:space-between; align-items:center; direction:rtl;">'
-            f'<span style="font-size:0.82rem; color:#94A3B8;">יחס R:R מעודכן לפי יעדים:</span>'
-            f'<span style="font-size:0.96rem; font-weight:800; color:#38BDF8;" dir="ltr">{live_rr}</span>'
-            f'</div>'
-        )
+    # === ENTRY TECHNICAL SNAPSHOT (1:1 PROTOTYPE C82) ===
+    rsi_raw = _pick_metric_val(trade_row, market_row, "rsi")
+    rsi_v = f"{float(rsi_raw):.1f}" if rsi_raw is not None else "--"
 
-    # === TECHNICAL SNAPSHOT AT ENTRY ===
-    rsi_v = f"{float(trade_row['rsi']):.1f}" if pd.notna(trade_row.get("rsi")) else "--"
-    macd_v = str(trade_row.get("macd_status") or "--")
-    cci_num = f"{float(trade_row['cci_value']):.1f}" if pd.notna(trade_row.get("cci_value")) else "--"
-    cci_st = str(trade_row.get("cci_status") or "")
-    rv5 = f"{float(trade_row['rel_vol_5d']):.2f}x" if pd.notna(trade_row.get("rel_vol_5d")) else "--"
-    rv20 = f"{float(trade_row['rel_vol_20d']):.2f}x" if pd.notna(trade_row.get("rel_vol_20d")) else "--"
-    atr_v = f"${float(trade_row['atr_14']):.2f}" if pd.notna(trade_row.get("atr_14")) else "--"
-    sqz_v = f"{float(trade_row['atr_squeeze_pct']):.0f}%" if pd.notna(trade_row.get("atr_squeeze_pct")) else "--"
+    macd_raw = str(trade_row.get("macd_status") or "").strip()
+    if not macd_raw or macd_raw.lower() in ("nan", "none"):
+        macd_v = "--"
+    else:
+        macd_v = macd_raw.split("(")[0].strip()
 
-    def _ma_pill_html(label: str, raw_st) -> str:
-        s = str(raw_st or "").strip()
-        if s.lower() == "above":
-            return f'<div class="dd-ma-pill dd-ma-above"><span>{label}</span><span>Above ▲</span></div>'
-        if s.lower() == "below":
-            return f'<div class="dd-ma-pill dd-ma-below"><span>{label}</span><span>Below ▼</span></div>'
-        return f'<div class="dd-ma-pill dd-ma-neutral"><span>{label}</span><span>--</span></div>'
+    cci_raw = trade_row.get("cci_value")
+    cci_num = f"{float(cci_raw):.1f}" if pd.notna(cci_raw) else "--"
+    cci_st = str(trade_row.get("cci_status") or "").strip()
+    if cci_st.lower() in ("nan", "none"):
+        cci_st = ""
 
-    ma_pills = (
-        _ma_pill_html("MA 20", trade_row.get("ma_20"))
-        + _ma_pill_html("MA 50", trade_row.get("ma_50"))
-        + _ma_pill_html("MA 150", trade_row.get("ma_150"))
-        + _ma_pill_html("MA 200", trade_row.get("ma_200"))
+    rv5_raw = _pick_metric_val(trade_row, market_row, "rel_vol_5d")
+    rv20_raw = _pick_metric_val(trade_row, market_row, "rel_vol_20d")
+    rv5 = f"{float(rv5_raw):.2f}x" if rv5_raw is not None else "--"
+    rv20 = f"{float(rv20_raw):.2f}x" if rv20_raw is not None else "--"
+
+    atr_raw = _pick_metric_val(trade_row, market_row, "atr_14")
+    sqz_raw = _pick_metric_val(trade_row, market_row, "atr_squeeze_pct")
+    atr_v = f"${float(atr_raw):.2f}" if atr_raw is not None else "--"
+    sqz_v = f"{float(sqz_raw):.0f}%" if sqz_raw is not None else "--"
+
+    def _ma_pill_c82(label: str, col_t: str, col_m: str) -> str:
+        raw_st = trade_row.get(col_t)
+        if pd.isna(raw_st) or not str(raw_st).strip():
+            raw_st = market_row.get(col_m) if market_row is not None else None
+        s = str(raw_st or "").strip().lower()
+        if "above" in s:
+            return f'<div class="c82-ma-pill c82-ma-above"><span>{label}</span><span dir="ltr">Above ▲</span></div>'
+        if "below" in s:
+            return f'<div class="c82-ma-pill c82-ma-below"><span>{label}</span><span dir="ltr">Below ▼</span></div>'
+        return f'<div class="c82-ma-pill c82-ma-none"><span>{label}</span><span>--</span></div>'
+
+    ma_pills_html = (
+        _ma_pill_c82("MA 20", "ma_20", "ma_20_status")
+        + _ma_pill_c82("MA 50", "ma_50", "ma_50_status")
+        + _ma_pill_c82("MA 150", "ma_150", "ma_150_status")
+        + _ma_pill_c82("MA 200", "ma_200", "ma_200_status")
     )
 
     _html(
         f"""
-        <div class="dd-panel-box">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <span style="font-size:1.02rem; font-weight:800; color:#F8FAFC;">
-                    <span style="color:#38BDF8;">●</span> צילום מצב טכני ברגע הכניסה לעסקה (Entry Snapshot)
-                </span>
-                <span style="font-size:0.78rem; color:#64748B;">נשמר אוטומטית בעת פתיחת העסקה</span>
+        <div class="c82-panel">
+            <div class="c82-panel-hdr">
+                <div class="c82-panel-title">
+                    <span style="color:#38BDF8; font-size:0.9rem;">●</span>
+                    <span>צילום מצב טכני ברגע הכניסה לעסקה (Entry Snapshot)</span>
+                </div>
+                <span class="c82-panel-sub">נשמר אוטומטית בעת פתיחת העסקה</span>
             </div>
-            <div class="dd-snap-5grid">
-                <div class="dd-snap-card">
-                    <div class="dd-mini-title">RSI (14) בכניסה</div>
-                    <div style="font-size:1.25rem; font-weight:800; color:#10B981;">{_ltr(rsi_v)}</div>
+            <div class="c82-snap-5">
+                <div class="c82-snap-tile">
+                    <div class="c82-snap-lbl">RSI (14) בכניסה</div>
+                    <div class="c82-snap-num" style="color:#10B981;">{_ltr(rsi_v)}</div>
                 </div>
-                <div class="dd-snap-card">
-                    <div class="dd-mini-title">MACD Status</div>
-                    <div style="font-size:1.05rem; font-weight:800; color:#10B981;">{_ltr(html.escape(macd_v))}</div>
+                <div class="c82-snap-tile">
+                    <div class="c82-snap-lbl">MACD Status</div>
+                    <div class="c82-snap-num" style="color:#10B981; font-size:1.05rem;">{html.escape(macd_v)}</div>
                 </div>
-                <div class="dd-snap-card">
-                    <div class="dd-mini-title">CCI (20)</div>
-                    <div style="font-size:1.15rem; font-weight:800; color:#F8FAFC;">{_ltr(cci_num)}</div>
-                    <div style="font-size:0.72rem; color:#64748B;">{html.escape(cci_st)}</div>
+                <div class="c82-snap-tile">
+                    <div class="c82-snap-lbl">CCI (20)</div>
+                    <div class="c82-snap-num" style="color:#F8FAFC;">{_ltr(cci_num)}</div>
+                    <div class="c82-snap-note">{html.escape(cci_st) if cci_st else "&nbsp;"}</div>
                 </div>
-                <div class="dd-snap-card">
-                    <div class="dd-mini-title">Rel Volume (5D / 20D)</div>
-                    <div style="font-size:1.05rem; font-weight:800; color:#38BDF8;">{_ltr(f"{rv5} / {rv20}")}</div>
+                <div class="c82-snap-tile">
+                    <div class="c82-snap-lbl">Rel Volume (5D / 20D)</div>
+                    <div class="c82-snap-num" style="color:#38BDF8;">{_ltr(f"{rv5} / {rv20}")}</div>
                 </div>
-                <div class="dd-snap-card">
-                    <div class="dd-mini-title">ATR(14) · Squeeze</div>
-                    <div style="font-size:1.05rem; font-weight:800; color:#F8FAFC;">{_ltr(f"{atr_v} · {sqz_v}")}</div>
+                <div class="c82-snap-tile">
+                    <div class="c82-snap-lbl">ATR(14) · Squeeze</div>
+                    <div class="c82-snap-num" style="color:#F8FAFC;">
+                        <span dir="ltr">{atr_v} · <span style="color:#10B981;">{sqz_v}</span></span>
+                    </div>
                 </div>
             </div>
-            <div style="font-size:0.8rem; color:#94A3B8; font-weight:600; margin-top:8px;">
+            <div style="font-size:0.8rem; color:#94A3B8; font-weight:600;">
                 מיקום ביחס לממוצעים נעים (Moving Averages) בכניסה:
             </div>
-            <div class="dd-ma-4grid">{ma_pills}</div>
+            <div class="c82-ma-4">{ma_pills_html}</div>
         </div>
         """
     )
 
-    # === EDITABLE S/R LEVELS (2 DAILY + 1 WEEKLY) & TECHNICAL SETUP TAGS ===
-    sr_col, tags_col = st.columns([1.05, 1.15])
-
-    def _get_sr_init(col_name: str) -> float:
+    # Helper to read S/R values
+    def _get_sr_val(col_name: str) -> float:
         if pd.notna(trade_row.get(col_name)):
             return float(trade_row[col_name])
         if market_row is not None and pd.notna(market_row.get(col_name)):
             return float(market_row[col_name])
         return 0.0
 
-    with sr_col:
+    ds1_v, dr1_v = _get_sr_val("d_s_1"), _get_sr_val("d_r_1")
+    ds2_v, dr2_v = _get_sr_val("d_s_2"), _get_sr_val("d_r_2")
+    ws1_v, wr1_v = _get_sr_val("w_s_1"), _get_sr_val("w_r_1")
+
+    cur_setup = str(trade_row.get("setup_pattern") or "").strip()
+    if not cur_setup and market_row is not None and pd.notna(market_row.get("setup_pattern")):
+        cur_setup = str(market_row["setup_pattern"]).strip()
+    if not cur_setup:
+        cur_setup = "ללא Setup"
+
+    cur_candle = str(trade_row.get("candlestick_pattern") or "").strip()
+    if not cur_candle or cur_candle.lower() in ("nan", "none"):
+        cur_candle = CANDLE_OPTIONS[0]
+
+    cur_trend = str(trade_row.get("trendline_status") or "").strip()
+    if not cur_trend or cur_trend.lower() in ("nan", "none"):
+        cur_trend = TRENDLINE_OPTIONS[0]
+
+    cur_gap = str(trade_row.get("gap_status") or "").strip()
+    if not cur_gap or cur_gap.lower() in ("nan", "none"):
+        cur_gap = GAPS_OPTIONS[0]
+
+    cur_fib = str(trade_row.get("fibonacci_level") or "").strip()
+    if not cur_fib or cur_fib.lower() in ("nan", "none"):
+        cur_fib = FIBONACCI_OPTIONS[0]
+
+    raw_legacy_notes = str(trade_row.get("notes") or "")
+    if raw_legacy_notes.lower() in ("nan", "none"):
+        raw_legacy_notes = ""
+
+    init_rationale = str(trade_row.get("entry_rationale") or "")
+    if init_rationale.lower() in ("nan", "none") or not init_rationale.strip():
+        init_rationale = raw_legacy_notes
+
+    init_exit_notes = str(trade_row.get("exit_notes") or "")
+    if init_exit_notes.lower() in ("nan", "none"):
+        init_exit_notes = ""
+
+    init_lessons = str(trade_row.get("lessons_learned") or "")
+    if init_lessons.lower() in ("nan", "none"):
+        init_lessons = ""
+
+    # === VIEW MODE (1:1 PROTOTYPE C82 CLEAN DARK CARDS) vs EDIT MODE ===
+    if not is_edit_mode:
+        d1_disp = f"S1: ${ds1_v:,.2f}  |  R1: ${dr1_v:,.2f}" if (ds1_v > 0 or dr1_v > 0) else "לא הוגדר"
+        d2_disp = f"S2: ${ds2_v:,.2f}  |  R2: ${dr2_v:,.2f}" if (ds2_v > 0 or dr2_v > 0) else "לא הוגדר"
+        w1_disp = f"S1: ${ws1_v:,.2f}  |  R1: ${wr1_v:,.2f}" if (ws1_v > 0 or wr1_v > 0) else "לא הוגדר"
+
+        plan_ok_cls = "dd-plan-badge-ok" if is_plan_ok else "dd-plan-badge-muted"
+        plan_no_cls = "dd-plan-badge-no" if not is_plan_ok else "dd-plan-badge-muted"
+
+        _html(
+            f"""
+            <div class="c82-two-col">
+                <div class="c82-panel" style="margin-bottom:0;">
+                    <div class="c82-panel-hdr">
+                        <span class="c82-panel-title" style="font-size:0.98rem;">רמות תמיכה והתנגדות קרובות בכניסה (S1 / R1)</span>
+                    </div>
+                    <div class="c82-sr-row">
+                        <span class="c82-sr-lbl">טווח יומי 1 (Daily S1/R1):</span>
+                        <span class="c82-sr-val">{html.escape(d1_disp)}</span>
+                    </div>
+                    <div class="c82-sr-row">
+                        <span class="c82-sr-lbl">טווח יומי 2 (Daily S2/R2):</span>
+                        <span class="c82-sr-val">{html.escape(d2_disp)}</span>
+                    </div>
+                    <div class="c82-sr-row">
+                        <span class="c82-sr-lbl">טווח שבועי (Weekly S1/R1):</span>
+                        <span class="c82-sr-val">{html.escape(w1_disp)}</span>
+                    </div>
+                </div>
+
+                <div class="c82-panel" style="margin-bottom:0;">
+                    <div class="c82-panel-hdr">
+                        <span class="c82-panel-title" style="font-size:0.98rem;">תגיות תצורה טכנית (Technical Setup Tags)</span>
+                        <span style="background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.35); color:#38BDF8; padding:2px 10px; border-radius:8px; font-size:0.76rem; font-weight:800;">
+                            Setup: {html.escape(cur_setup)}
+                        </span>
+                    </div>
+                    <div class="c82-tags-2x2">
+                        <div class="c82-tag-box">
+                            <div class="c82-tag-lbl">תבנית נרות (Candlestick)</div>
+                            <div class="c82-tag-val">{html.escape(cur_candle)}</div>
+                        </div>
+                        <div class="c82-tag-box">
+                            <div class="c82-tag-lbl">קו מגמה (Trendline)</div>
+                            <div class="c82-tag-val">{html.escape(cur_trend)}</div>
+                        </div>
+                        <div class="c82-tag-box">
+                            <div class="c82-tag-lbl">גאפ (Gap Status)</div>
+                            <div class="c82-tag-val" style="color:#38BDF8;">{html.escape(cur_gap)}</div>
+                        </div>
+                        <div class="c82-tag-box">
+                            <div class="c82-tag-lbl">רמת פיבונאצ'י (Fibonacci)</div>
+                            <div class="c82-tag-val" style="color:#10B981;">{html.escape(cur_fib)}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="c82-panel" style="margin-bottom:0;">
+                <div class="c82-panel-hdr">
+                    <span class="c82-panel-title">יומן מסחר, נימוקי כניסה ומסקנות</span>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:0.8rem; color:#94A3B8;">עמידה בתוכנית:</span>
+                        <span class="{plan_ok_cls}">✓ לפי תוכנית</span>
+                        <span class="{plan_no_cls}">✗ חריגה</span>
+                    </div>
+                </div>
+                <div class="c82-journal-3">
+                    <div class="c82-j-box">
+                        <div class="c82-j-title">נימוקי כניסה וטריגר (Entry Rationale)</div>
+                        <div class="c82-j-body">{html.escape(init_rationale) if init_rationale.strip() else "לא הוזנו נימוקי כניסה — לחץ על 'עריכת נתונים' להוספה."}</div>
+                    </div>
+                    <div class="c82-j-box">
+                        <div class="c82-j-title">ניהול עסקה והערות יציאה (Exit Notes)</div>
+                        <div class="c82-j-body">{html.escape(init_exit_notes) if init_exit_notes.strip() else "אין הערות ניהול / יציאה עדיין."}</div>
+                    </div>
+                    <div class="c82-j-box">
+                        <div class="c82-j-title">מסקנות ולקחים לעתיד (Lessons Learned)</div>
+                        <div class="c82-j-body">{html.escape(init_lessons) if init_lessons.strip() else "אין מסקנות מתועדות עדיין."}</div>
+                    </div>
+                </div>
+            </div>
+            """
+        )
+    else:
+        # === FULL EDIT MODE ===
         with st.container(border=True):
-            _html('<div style="font-size:0.95rem; font-weight:800; color:#F8FAFC; margin-bottom:8px; direction:rtl;">רמות תמיכה והתנגדות קרובות בכניסה (ניתנות לעריכה)</div>')
-            d1_s_c, d1_r_c = st.columns(2)
-            with d1_s_c:
-                ed_ds1 = st.number_input("טווח יומי 1 — תמיכה (S1 $)", min_value=0.0, value=_get_sr_init("d_s_1"), step=0.25, format="%.2f", key=f"dd_ds1_{tid}")
-            with d1_r_c:
-                ed_dr1 = st.number_input("טווח יומי 1 — התנגדות (R1 $)", min_value=0.0, value=_get_sr_init("d_r_1"), step=0.25, format="%.2f", key=f"dd_dr1_{tid}")
+            _html('<div style="font-size:0.95rem; font-weight:800; color:#38BDF8; margin-bottom:6px; direction:rtl;">עריכת יעדי ניהול סיכון (SL / TP)</div>')
+            sl_col, tp_col, rr_preview_col = st.columns([1.2, 1.2, 1.6])
+            with sl_col:
+                edit_sl = st.number_input(
+                    "Stop Loss ($)",
+                    min_value=0.0,
+                    value=float(sl_curr) if sl_curr is not None else 0.0,
+                    step=0.25,
+                    format="%.2f",
+                    key=f"dd_edit_sl_{tid}",
+                )
+            with tp_col:
+                edit_tp = st.number_input(
+                    "Take Profit ($)",
+                    min_value=0.0,
+                    value=float(tp_curr) if tp_curr is not None else 0.0,
+                    step=0.25,
+                    format="%.2f",
+                    key=f"dd_edit_tp_{tid}",
+                )
+            with rr_preview_col:
+                live_rr = "--"
+                if edit_sl > 0 and edit_tp > 0 and ep > edit_sl and edit_tp > ep:
+                    live_rr = f"1 : {(edit_tp - ep) / (ep - edit_sl):.2f}"
+                _html(
+                    f'<div style="background:#0A0E17; border:1px solid #1E293B; border-radius:10px; padding:10px 14px; '
+                    f'margin-top:22px; display:flex; justify-content:space-between; align-items:center; direction:rtl;">'
+                    f'<span style="font-size:0.82rem; color:#94A3B8;">יחס R:R מעודכן לפי יעדים:</span>'
+                    f'<span style="font-size:0.96rem; font-weight:800; color:#38BDF8;" dir="ltr">{live_rr}</span>'
+                    f'</div>'
+                )
 
-            d2_s_c, d2_r_c = st.columns(2)
-            with d2_s_c:
-                ed_ds2 = st.number_input("טווח יומי 2 — תמיכה (S2 $)", min_value=0.0, value=_get_sr_init("d_s_2"), step=0.25, format="%.2f", key=f"dd_ds2_{tid}")
-            with d2_r_c:
-                ed_dr2 = st.number_input("טווח יומי 2 — התנגדות (R2 $)", min_value=0.0, value=_get_sr_init("d_r_2"), step=0.25, format="%.2f", key=f"dd_dr2_{tid}")
+        sr_col, tags_col = st.columns([1.05, 1.15])
+        with sr_col:
+            with st.container(border=True):
+                _html('<div style="font-size:0.95rem; font-weight:800; color:#F8FAFC; margin-bottom:8px; direction:rtl;">עריכת רמות תמיכה והתנגדות (2 יומיים + 1 שבועי)</div>')
+                d1_s_c, d1_r_c = st.columns(2)
+                with d1_s_c:
+                    ed_ds1 = st.number_input("טווח יומי 1 — תמיכה (S1 $)", min_value=0.0, value=ds1_v, step=0.25, format="%.2f", key=f"dd_ds1_{tid}")
+                with d1_r_c:
+                    ed_dr1 = st.number_input("טווח יומי 1 — התנגדות (R1 $)", min_value=0.0, value=dr1_v, step=0.25, format="%.2f", key=f"dd_dr1_{tid}")
 
-            w1_s_c, w1_r_c = st.columns(2)
-            with w1_s_c:
-                ed_ws1 = st.number_input("טווח שבועי — תמיכה (W-S1 $)", min_value=0.0, value=_get_sr_init("w_s_1"), step=0.25, format="%.2f", key=f"dd_ws1_{tid}")
-            with w1_r_c:
-                ed_wr1 = st.number_input("טווח שבועי — התנגדות (W-R1 $)", min_value=0.0, value=_get_sr_init("w_r_1"), step=0.25, format="%.2f", key=f"dd_wr1_{tid}")
+                d2_s_c, d2_r_c = st.columns(2)
+                with d2_s_c:
+                    ed_ds2 = st.number_input("טווח יומי 2 — תמיכה (S2 $)", min_value=0.0, value=ds2_v, step=0.25, format="%.2f", key=f"dd_ds2_{tid}")
+                with d2_r_c:
+                    ed_dr2 = st.number_input("טווח יומי 2 — התנגדות (R2 $)", min_value=0.0, value=dr2_v, step=0.25, format="%.2f", key=f"dd_dr2_{tid}")
 
-    with tags_col:
+                w1_s_c, w1_r_c = st.columns(2)
+                with w1_s_c:
+                    ed_ws1 = st.number_input("טווח שבועי — תמיכה (W-S1 $)", min_value=0.0, value=ws1_v, step=0.25, format="%.2f", key=f"dd_ws1_{tid}")
+                with w1_r_c:
+                    ed_wr1 = st.number_input("טווח שבועי — התנגדות (W-R1 $)", min_value=0.0, value=wr1_v, step=0.25, format="%.2f", key=f"dd_wr1_{tid}")
+
+        with tags_col:
+            with st.container(border=True):
+                _html('<div style="font-size:0.95rem; font-weight:800; color:#F8FAFC; margin-bottom:8px; direction:rtl;">עריכת תגיות תצורה טכנית (Technical Setup Tags)</div>')
+                setup_list = SETUP_OPTIONS if cur_setup in SETUP_OPTIONS else [cur_setup] + SETUP_OPTIONS
+                ed_setup = st.selectbox(
+                    "תבנית מסחר ראשית (Setup — מסתנכרן עם ניתוח עומק)",
+                    setup_list,
+                    index=setup_list.index(cur_setup),
+                    key=f"dd_setup_{tid}",
+                )
+
+                t_c1, t_c2 = st.columns(2)
+                with t_c1:
+                    c_list = CANDLE_OPTIONS if cur_candle in CANDLE_OPTIONS else [cur_candle] + CANDLE_OPTIONS
+                    ed_candle = st.selectbox("תבנית נרות (Candlestick)", c_list, index=c_list.index(cur_candle), key=f"dd_candle_{tid}")
+
+                    f_list = FIBONACCI_OPTIONS if cur_fib in FIBONACCI_OPTIONS else [cur_fib] + FIBONACCI_OPTIONS
+                    ed_fib = st.selectbox("רמת פיבונאצ'י (Fibonacci)", f_list, index=f_list.index(cur_fib), key=f"dd_fib_{tid}")
+
+                with t_c2:
+                    tr_list = TRENDLINE_OPTIONS if cur_trend in TRENDLINE_OPTIONS else [cur_trend] + TRENDLINE_OPTIONS
+                    ed_trend = st.selectbox("קו מגמה (Trendline)", tr_list, index=tr_list.index(cur_trend), key=f"dd_trend_{tid}")
+
+                    g_list = GAPS_OPTIONS if cur_gap in GAPS_OPTIONS else [cur_gap] + GAPS_OPTIONS
+                    ed_gap = st.selectbox("גאפ (Gap Status)", g_list, index=g_list.index(cur_gap), key=f"dd_gap_{tid}")
+
         with st.container(border=True):
-            _html('<div style="font-size:0.95rem; font-weight:800; color:#F8FAFC; margin-bottom:8px; direction:rtl;">תגיות תצורה טכנית (Technical Setup Tags — ניתנות לעריכה)</div>')
+            jh_right, jh_left = st.columns([2.2, 1.3])
+            with jh_right:
+                _html('<div style="font-size:1.0rem; font-weight:800; color:#F8FAFC; padding-top:4px; direction:rtl;">עריכת יומן מסחר, נימוקי כניסה ומסקנות</div>')
+            with jh_left:
+                plan_choice = st.radio(
+                    "עמידה בתוכנית:",
+                    ["✓ לפי תוכנית", "✗ חריגה"],
+                    index=0 if is_plan_ok else 1,
+                    horizontal=True,
+                    key=f"dd_plan_{tid}",
+                )
 
-            cur_setup = str(trade_row.get("setup_pattern") or "").strip()
-            if not cur_setup and market_row is not None and pd.notna(market_row.get("setup_pattern")):
-                cur_setup = str(market_row["setup_pattern"]).strip()
-            if not cur_setup:
-                cur_setup = "ללא Setup"
-            setup_list = SETUP_OPTIONS if cur_setup in SETUP_OPTIONS else [cur_setup] + SETUP_OPTIONS
-            ed_setup = st.selectbox(
-                "תבנית מסחר ראשית (Setup — מסתנכרן עם ניתוח עומק)",
-                setup_list,
-                index=setup_list.index(cur_setup),
-                key=f"dd_setup_{tid}",
-            )
+            n_c1, n_c2, n_c3 = st.columns(3)
+            with n_c1:
+                ed_rationale = st.text_area(
+                    "נימוקי כניסה וטריגר (Entry Rationale)",
+                    value=init_rationale,
+                    height=115,
+                    key=f"dd_rat_{tid}",
+                )
+            with n_c2:
+                ed_exit_notes = st.text_area(
+                    "ניהול עסקה והערות יציאה (Exit Notes)",
+                    value=init_exit_notes,
+                    height=115,
+                    key=f"dd_exit_{tid}",
+                )
+            with n_c3:
+                ed_lessons = st.text_area(
+                    "מסקנות ולקחים לעתיד (Lessons Learned)",
+                    value=init_lessons,
+                    height=115,
+                    key=f"dd_les_{tid}",
+                )
 
-            t_c1, t_c2 = st.columns(2)
-            with t_c1:
-                cur_candle = str(trade_row.get("candlestick_pattern") or "ללא").strip() or "ללא"
-                c_list = CANDLESTICK_OPTIONS if cur_candle in CANDLESTICK_OPTIONS else [cur_candle] + CANDLESTICK_OPTIONS
-                ed_candle = st.selectbox("תבנית נרות (Candlestick)", c_list, index=c_list.index(cur_candle), key=f"dd_candle_{tid}")
+        act_save, act_del = st.columns([3.2, 1.0])
+        with act_save:
+            if st.button("💾 שמור את כל השינויים וסנכרן Setup", type="primary", use_container_width=True, key=f"dd_save_all_{tid}"):
+                now_iso = datetime.now(timezone.utc).isoformat()
+                clean_setup_save = None if ed_setup == "ללא Setup" else ed_setup
+                plan_save = "Yes" if "לפי תוכנית" in plan_choice else "No"
 
-                cur_fib = str(trade_row.get("fibonacci_level") or "ללא").strip() or "ללא"
-                f_list = FIBONACCI_OPTIONS if cur_fib in FIBONACCI_OPTIONS else [cur_fib] + FIBONACCI_OPTIONS
-                ed_fib = st.selectbox("רמת פיבונאצ'י (Fibonacci)", f_list, index=f_list.index(cur_fib), key=f"dd_fib_{tid}")
+                ds1_str = f"${ed_ds1:,.2f}" if ed_ds1 > 0 else "-"
+                dr1_str = f"${ed_dr1:,.2f}" if ed_dr1 > 0 else "-"
+                ws1_str = f"${ed_ws1:,.2f}" if ed_ws1 > 0 else "-"
+                wr1_str = f"${ed_wr1:,.2f}" if ed_wr1 > 0 else "-"
 
-            with t_c2:
-                cur_trend = str(trade_row.get("trendline_status") or "ללא").strip() or "ללא"
-                tr_list = TRENDLINE_OPTIONS if cur_trend in TRENDLINE_OPTIONS else [cur_trend] + TRENDLINE_OPTIONS
-                ed_trend = st.selectbox("קו מגמה (Trendline)", tr_list, index=tr_list.index(cur_trend), key=f"dd_trend_{tid}")
+                combined_notes = "\n\n".join(
+                    part for part in [ed_rationale.strip(), ed_exit_notes.strip(), ed_lessons.strip()] if part
+                )
 
-                cur_gap = str(trade_row.get("gap_status") or "ללא גאפ פתוח").strip() or "ללא גאפ פתוח"
-                g_list = GAP_OPTIONS if cur_gap in GAP_OPTIONS else [cur_gap] + GAP_OPTIONS
-                ed_gap = st.selectbox("גאפ (Gap Status)", g_list, index=g_list.index(cur_gap), key=f"dd_gap_{tid}")
-
-    # === JOURNAL: RATIONALE, EXIT NOTES & LESSONS LEARNED ===
-    with st.container(border=True):
-        jh_right, jh_left = st.columns([2.2, 1.3])
-        with jh_right:
-            _html('<div style="font-size:1.0rem; font-weight:800; color:#F8FAFC; padding-top:4px; direction:rtl;">יומן מסחר, נימוקי כניסה ומסקנות</div>')
-        with jh_left:
-            plan_choice = st.radio(
-                "עמידה בתוכנית:",
-                ["✓ לפי תוכנית", "✗ חריגה"],
-                index=0 if is_plan_ok else 1,
-                horizontal=True,
-                key=f"dd_plan_{tid}",
-            )
-
-        raw_legacy_notes = str(trade_row.get("notes") or "")
-        if raw_legacy_notes.lower() in ("nan", "none"):
-            raw_legacy_notes = ""
-
-        init_rationale = str(trade_row.get("entry_rationale") or "")
-        if init_rationale.lower() in ("nan", "none") or not init_rationale.strip():
-            init_rationale = raw_legacy_notes
-
-        init_exit_notes = str(trade_row.get("exit_notes") or "")
-        if init_exit_notes.lower() in ("nan", "none"):
-            init_exit_notes = ""
-
-        init_lessons = str(trade_row.get("lessons_learned") or "")
-        if init_lessons.lower() in ("nan", "none"):
-            init_lessons = ""
-
-        n_c1, n_c2, n_c3 = st.columns(3)
-        with n_c1:
-            ed_rationale = st.text_area(
-                "נימוקי כניסה וטריגר (Entry Rationale)",
-                value=init_rationale,
-                height=115,
-                placeholder="לדוגמה: בדיקה חוזרת מעל MA20 ו-MA50 לאחר דוחות חזקים...",
-                key=f"dd_rat_{tid}",
-            )
-        with n_c2:
-            ed_exit_notes = st.text_area(
-                "ניהול עסקה והערות יציאה (Exit Notes)",
-                value=init_exit_notes,
-                height=115,
-                placeholder="לדוגמה: העלאת סטופ ל-$438 לאחר מעבר מעל $460...",
-                key=f"dd_exit_{tid}",
-            )
-        with n_c3:
-            ed_lessons = st.text_area(
-                "מסקנות ולקחים לעתיד (Lessons Learned)",
-                value=init_lessons,
-                height=115,
-                placeholder="לדוגמה: כניסה סבלנית בפולבק מייצרת יחס סיכוי/סיכון מעולה...",
-                key=f"dd_les_{tid}",
-            )
-
-    # === SAVE & DELETE BUTTONS ===
-    act_save, act_del = st.columns([3.2, 1.0])
-    with act_save:
-        if st.button("💾 שמור את כל השינויים וסנכרן Setup", type="primary", use_container_width=True, key=f"dd_save_all_{tid}"):
-            now_iso = datetime.now(timezone.utc).isoformat()
-            clean_setup_save = None if ed_setup == "ללא Setup" else ed_setup
-            plan_save = "Yes" if "לפי תוכנית" in plan_choice else "No"
-
-            ds1_str = f"${ed_ds1:,.2f}" if ed_ds1 > 0 else "-"
-            dr1_str = f"${ed_dr1:,.2f}" if ed_dr1 > 0 else "-"
-            ws1_str = f"${ed_ws1:,.2f}" if ed_ws1 > 0 else "-"
-            wr1_str = f"${ed_wr1:,.2f}" if ed_wr1 > 0 else "-"
-
-            combined_notes = "\n\n".join(
-                part for part in [ed_rationale.strip(), ed_exit_notes.strip(), ed_lessons.strip()] if part
-            )
-
-            full_update = {
-                "stop_loss": round(float(edit_sl), 4) if edit_sl > 0 else None,
-                "take_profit": round(float(edit_tp), 4) if edit_tp > 0 else None,
-                "d_s_1": round(float(ed_ds1), 4) if ed_ds1 > 0 else None,
-                "d_r_1": round(float(ed_dr1), 4) if ed_dr1 > 0 else None,
-                "d_s_2": round(float(ed_ds2), 4) if ed_ds2 > 0 else None,
-                "d_r_2": round(float(ed_dr2), 4) if ed_dr2 > 0 else None,
-                "w_s_1": round(float(ed_ws1), 4) if ed_ws1 > 0 else None,
-                "w_r_1": round(float(ed_wr1), 4) if ed_wr1 > 0 else None,
-                "daily_next_sr": f"S: {ds1_str} | R: {dr1_str}",
-                "weekly_next_sr": f"S: {ws1_str} | R: {wr1_str}",
-                "setup_pattern": clean_setup_save,
-                "candlestick_pattern": None if ed_candle == "ללא" else ed_candle,
-                "trendline_status": None if ed_trend == "ללא" else ed_trend,
-                "gap_status": None if ed_gap == "ללא גאפ פתוח" else ed_gap,
-                "fibonacci_level": None if ed_fib == "ללא" else ed_fib,
-                "according_to_plan": plan_save,
-                "entry_rationale": ed_rationale.strip() or None,
-                "exit_notes": ed_exit_notes.strip() or None,
-                "lessons_learned": ed_lessons.strip() or None,
-                "notes": combined_notes or None,
-                "updated_at": now_iso,
-            }
-            _safe_update_trade(tid, full_update, existing_cols)
-            sync_setup_pattern(sym, clean_setup_save, trade_id=tid)
-            _clear_all_caches()
-            st.success("כל נתוני העסקה נשמרו וסונכרנו בהצלחה!")
-            st.rerun()
-
-    with act_del:
-        del_confirm_key = f"dd_del_confirm_{tid}"
-        if not st.session_state.get(del_confirm_key, False):
-            if st.button("🗑️ מחק עסקה", use_container_width=True, key=f"dd_del_btn_{tid}"):
-                st.session_state[del_confirm_key] = True
-                st.rerun()
-        else:
-            if st.button("⚠️ אשר מחיקה סופית", type="primary", use_container_width=True, key=f"dd_del_yes_{tid}"):
-                sb = get_supabase_client()
-                sb.table("trade_journal").delete().eq("id", tid).execute()
-                st.session_state[del_confirm_key] = False
-                st.session_state["jp_selected_trade_id"] = None
+                full_update = {
+                    "stop_loss": round(float(edit_sl), 4) if edit_sl > 0 else None,
+                    "take_profit": round(float(edit_tp), 4) if edit_tp > 0 else None,
+                    "d_s_1": round(float(ed_ds1), 4) if ed_ds1 > 0 else None,
+                    "d_r_1": round(float(ed_dr1), 4) if ed_dr1 > 0 else None,
+                    "d_s_2": round(float(ed_ds2), 4) if ed_ds2 > 0 else None,
+                    "d_r_2": round(float(ed_dr2), 4) if ed_dr2 > 0 else None,
+                    "w_s_1": round(float(ed_ws1), 4) if ed_ws1 > 0 else None,
+                    "w_r_1": round(float(ed_wr1), 4) if ed_wr1 > 0 else None,
+                    "daily_next_sr": f"S: {ds1_str} | R: {dr1_str}",
+                    "weekly_next_sr": f"S: {ws1_str} | R: {wr1_str}",
+                    "setup_pattern": clean_setup_save,
+                    "candlestick_pattern": None if ed_candle == CANDLE_OPTIONS[0] else ed_candle,
+                    "trendline_status": None if ed_trend == TRENDLINE_OPTIONS[0] else ed_trend,
+                    "gap_status": None if ed_gap == GAPS_OPTIONS[0] else ed_gap,
+                    "fibonacci_level": None if ed_fib == FIBONACCI_OPTIONS[0] else ed_fib,
+                    "according_to_plan": plan_save,
+                    "entry_rationale": ed_rationale.strip() or None,
+                    "exit_notes": ed_exit_notes.strip() or None,
+                    "lessons_learned": ed_lessons.strip() or None,
+                    "notes": combined_notes or None,
+                    "updated_at": now_iso,
+                }
+                _safe_update_trade(tid, full_update, existing_cols)
+                sync_setup_pattern(sym, clean_setup_save, trade_id=tid)
+                st.session_state[edit_mode_key] = False
                 _clear_all_caches()
+                st.success("כל נתוני העסקה נשמרו וסונכרנו בהצלחה!")
+                st.rerun()
+
+        with act_del:
+            del_confirm_key = f"dd_del_confirm_{tid}"
+            if not st.session_state.get(del_confirm_key, False):
+                if st.button("🗑️ מחק עסקה", use_container_width=True, key=f"dd_del_btn_{tid}"):
+                    st.session_state[del_confirm_key] = True
+                    st.rerun()
+            else:
+                if st.button("⚠️ אשר מחיקה סופית", type="primary", use_container_width=True, key=f"dd_del_yes_{tid}"):
+                    sb = get_supabase_client()
+                    sb.table("trade_journal").delete().eq("id", tid).execute()
+                    st.session_state[del_confirm_key] = False
+                    st.session_state["jp_selected_trade_id"] = None
+                    _clear_all_caches()
+                    st.rerun()
+
+
+# === [SEC-05: AVERAGED POSITION LOT-BREAKDOWN MODAL] ===
+@st.dialog("פירוט מנות ממוצעות (Averaged Lots)", width="large")
+def open_averaged_lots_modal(
+    sym: str,
+    lots_df: pd.DataFrame,
+    market_row: pd.Series | None,
+    live_price: float,
+) -> None:
+    comp_name = str(lots_df.iloc[0].get("company_name") or (market_row.get("company_name") if market_row is not None else sym) or sym)
+    tot_qty = float(lots_df["quantity"].sum())
+    tot_cost = float((lots_df["entry_price"] * lots_df["quantity"]).sum())
+    avg_ep = (tot_cost / tot_qty) if tot_qty > 0 else 0.0
+    tot_val = live_price * tot_qty
+    tot_pnl = tot_val - tot_cost
+    tot_pct = (tot_pnl / tot_cost * 100.0) if tot_cost > 0 else 0.0
+    pnl_col = "#10B981" if tot_pnl >= 0 else "#EF4444"
+
+    _html(
+        f"""
+        <div class="c82-panel" style="margin-bottom:14px;">
+            <div class="c82-panel-hdr">
+                <span class="c82-panel-title">{html.escape(comp_name)} — {html.escape(sym)} · סיכום מיצוע ({len(lots_df)} מנות)</span>
+                <span style="color:#38BDF8; font-weight:800; font-size:0.95rem;" dir="ltr">שער חי: {_fmt_usd(live_price)}</span>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:12px; direction:rtl;">
+                <div class="c82-stat-card">
+                    <div class="c82-stat-lbl">כמות מניות כוללת</div>
+                    <div class="c82-stat-val">{_ltr(f"{tot_qty:g}")}</div>
+                </div>
+                <div class="c82-stat-card">
+                    <div class="c82-stat-lbl">שער כניסה ממוצע</div>
+                    <div class="c82-stat-val" style="color:#38BDF8;">{_ltr(_fmt_usd(avg_ep))}</div>
+                </div>
+                <div class="c82-stat-card">
+                    <div class="c82-stat-lbl">עלות כוללת / שווי חי</div>
+                    <div class="c82-stat-val">{_ltr(f"{_fmt_usd(tot_cost, decimals=0)} / {_fmt_usd(tot_val, decimals=0)}")}</div>
+                </div>
+                <div class="c82-stat-card">
+                    <div class="c82-stat-lbl">רווח / הפסד מצטבר</div>
+                    <div class="c82-stat-val" style="color:{pnl_col};">{_ltr(f"{_fmt_usd(tot_pnl, signed=True)} ({tot_pct:+.2f}%)")}</div>
+                </div>
+            </div>
+        </div>
+        """
+    )
+
+    st.caption("בחר מנה ספציפית כדי לפתוח את כרטיסיית ניתוח העומק והניהול שלה:")
+    for idx, (_, lr) in enumerate(lots_df.iterrows(), start=1):
+        ltid = int(lr["id"])
+        lep = float(lr["entry_price"])
+        lqty = float(lr["quantity"])
+        lpnl = (live_price - lep) * lqty
+        lpct = ((live_price - lep) / lep * 100.0) if lep > 0 else 0.0
+        lcol = "#10B981" if lpnl >= 0 else "#EF4444"
+        c_info, c_btn = st.columns([3.2, 1.0])
+        with c_info:
+            _html(
+                f'<div style="background:#0D111A; border:1px solid #1E2638; border-radius:10px; padding:10px 14px; '
+                f'display:flex; justify-content:space-between; align-items:center; direction:rtl;">'
+                f'<span><b>מנה #{idx}</b> · כניסה: <span dir="ltr">{_fmt_date_short(lr.get("entry_date"))}</span> · '
+                f'כמות: <b dir="ltr">{lqty:g}</b> · שער: <b dir="ltr">{_fmt_usd(lep)}</b></span>'
+                f'<span style="color:{lcol}; font-weight:800;" dir="ltr">{_fmt_usd(lpnl, signed=True)} ({lpct:+.2f}%)</span>'
+                f'</div>'
+            )
+        with c_btn:
+            if st.button("פתח ניתוח עומק", key=f"avg_open_lot_{ltid}", use_container_width=True):
+                st.session_state["jp_avg_symbol"] = None
+                st.session_state["jp_selected_trade_id"] = ltid
                 st.rerun()
 
 
-# === [SEC-05: MAIN POSITIONS & TRADE JOURNAL PAGE RENDERER] ===
+# === [SEC-06: AVERAGING / CONSOLIDATION HELPERS] ===
+def _build_averaged_open_rows(open_df: pd.DataFrame, price_map: dict[str, float]) -> list[dict]:
+    """Consolidates open positions purchased in multiple tranches into weighted-average rows."""
+    if open_df.empty:
+        return []
+    df = open_df.copy()
+    df["clean_sym"] = df["symbol"].astype(str).str.split(":").str[-1].str.strip().str.upper()
+
+    grouped_list: list[dict] = []
+    for sym, grp in df.groupby("clean_sym", sort=False):
+        tot_qty = float(grp["quantity"].sum())
+        tot_cost = float((grp["entry_price"] * grp["quantity"]).sum())
+        avg_ep = (tot_cost / tot_qty) if tot_qty > 0 else float(grp.iloc[0]["entry_price"])
+        lp = price_map.get(sym, avg_ep)
+        tot_val = lp * tot_qty
+        tot_pnl = tot_val - tot_cost
+        tot_pct = (tot_pnl / tot_cost * 100.0) if tot_cost > 0 else 0.0
+
+        # Weighted average SL & TP across lots that have them
+        sl_rows = grp[grp["stop_loss"].notna() & (grp["stop_loss"] > 0)]
+        avg_sl = (
+            float((sl_rows["stop_loss"] * sl_rows["quantity"]).sum() / sl_rows["quantity"].sum())
+            if not sl_rows.empty
+            else None
+        )
+        tp_rows = grp[grp["take_profit"].notna() & (grp["take_profit"] > 0)]
+        avg_tp = (
+            float((tp_rows["take_profit"] * tp_rows["quantity"]).sum() / tp_rows["quantity"].sum())
+            if not tp_rows.empty
+            else None
+        )
+
+        # Earliest entry date
+        dt_series = pd.to_datetime(grp["entry_date"], errors="coerce").dropna()
+        earliest_dt = dt_series.min() if not dt_series.empty else grp.iloc[0]["entry_date"]
+
+        plan_all_ok = all(str(x or "Yes") == "Yes" for x in grp["according_to_plan"])
+        grouped_list.append(
+            {
+                "is_grouped": len(grp) > 1,
+                "lot_count": len(grp),
+                "trade_id": int(grp.iloc[0]["id"]),
+                "symbol": sym,
+                "company_name": str(grp.iloc[0].get("company_name") or sym),
+                "entry_date": earliest_dt,
+                "quantity": tot_qty,
+                "entry_price": avg_ep,
+                "live_price": lp,
+                "pos_val": tot_val,
+                "cost_val": tot_cost,
+                "pnl_usd": tot_pnl,
+                "pnl_pct": tot_pct,
+                "stop_loss": avg_sl,
+                "take_profit": avg_tp,
+                "according_to_plan": "Yes" if plan_all_ok else "No",
+            }
+        )
+    return grouped_list
+
+
+def _build_averaged_closed_rows(closed_df: pd.DataFrame) -> list[dict]:
+    """Consolidates closed trades by ticker: averages prices on winners, sums P&L on losers."""
+    if closed_df.empty:
+        return []
+    df = closed_df.copy()
+    df["clean_sym"] = df["symbol"].astype(str).str.split(":").str[-1].str.strip().str.upper()
+
+    grouped_list: list[dict] = []
+    for sym, grp in df.groupby("clean_sym", sort=False):
+        tot_qty = float(grp["quantity"].sum())
+        tot_cost = float((grp["entry_price"] * grp["quantity"]).sum())
+        avg_ep = (tot_cost / tot_qty) if tot_qty > 0 else float(grp.iloc[0]["entry_price"])
+
+        exit_prices = []
+        for _, r in grp.iterrows():
+            cp_raw = r.get("close_price") if pd.notna(r.get("close_price")) else r.get("exit_price")
+            exit_prices.append(float(cp_raw) if cp_raw is not None and pd.notna(cp_raw) else float(r["entry_price"]))
+        grp = grp.assign(_eff_exit=exit_prices)
+        tot_exit_val = float((grp["_eff_exit"] * grp["quantity"]).sum())
+        avg_cp = (tot_exit_val / tot_qty) if tot_qty > 0 else avg_ep
+
+        gross_sum = float(
+            sum(
+                float(r["gross_pnl"]) if pd.notna(r.get("gross_pnl")) else (r["_eff_exit"] - float(r["entry_price"])) * float(r["quantity"])
+                for _, r in grp.iterrows()
+            )
+        )
+        tax_sum = float(grp["tax_paid"].fillna(0).sum()) if "tax_paid" in grp.columns else 0.0
+        fee_sum = float(grp["fees"].fillna(0).sum()) if "fees" in grp.columns else 0.0
+        net_sum = float(
+            sum(
+                float(r["net_pnl"]) if pd.notna(r.get("net_pnl")) else (r["_eff_exit"] - float(r["entry_price"])) * float(r["quantity"])
+                for _, r in grp.iterrows()
+            )
+        )
+        ret_pct = (net_sum / tot_cost * 100.0) if tot_cost > 0 else 0.0
+
+        dt_e = pd.to_datetime(grp["entry_date"], errors="coerce").dropna()
+        dt_c = pd.to_datetime(grp["close_date"], errors="coerce").dropna() if "close_date" in grp.columns else pd.Series(dtype="datetime64[ns]")
+        min_e = dt_e.min() if not dt_e.empty else grp.iloc[0]["entry_date"]
+        max_c = dt_c.max() if not dt_c.empty else grp.iloc[0].get("close_date")
+
+        setups = [str(x).strip() for x in grp["setup_pattern"].dropna() if str(x).strip()]
+        setup_lbl = setups[0] if setups else "ללא Setup"
+        plan_all_ok = all(str(x or "Yes") == "Yes" for x in grp["according_to_plan"])
+
+        grouped_list.append(
+            {
+                "is_grouped": len(grp) > 1,
+                "lot_count": len(grp),
+                "trade_id": int(grp.iloc[0]["id"]),
+                "symbol": sym,
+                "company_name": str(grp.iloc[0].get("company_name") or sym),
+                "entry_date": min_e,
+                "close_date": max_c,
+                "quantity": tot_qty,
+                "entry_price": avg_ep,
+                "close_price": avg_cp,
+                "net_pnl": net_sum,
+                "gross_pnl": gross_sum,
+                "tax_paid": tax_sum,
+                "fees": fee_sum,
+                "ret_pct": ret_pct,
+                "setup_pattern": setup_lbl,
+                "according_to_plan": "Yes" if plan_all_ok else "No",
+            }
+        )
+    return grouped_list
+
+
+# === [SEC-07: MAIN POSITIONS & TRADE JOURNAL PAGE RENDERER] ===
 def render_positions_and_log_page() -> None:
     inject_positions_css()
 
@@ -1455,7 +1930,7 @@ def render_positions_and_log_page() -> None:
     m_losses = int((m_closed["net_pnl"].fillna(0) < 0).sum()) if m_cnt > 0 else 0
     m_wr = (m_wins / m_cnt * 100.0) if m_cnt > 0 else 0.0
 
-    # === 4 TOP SUMMARY CARDS IN EXACT ORDER ===
+    # === 4 TOP SUMMARY CARDS ===
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         _html(
@@ -1523,10 +1998,10 @@ def render_positions_and_log_page() -> None:
             """
         )
 
-    # === UNIFIED FILTER & SEARCH BAR ===
+    # === UNIFIED FILTER & SEARCH BAR (WITH 'מיצוע' IN STATUS SECTION) ===
     with st.container():
         _html('<div class="jp-filter-marker" style="display:none;"></div>')
-        f_search, f_status, f_outcome, f_plan = st.columns([1.45, 1.25, 1.15, 1.15])
+        f_search, f_status, f_outcome, f_plan = st.columns([1.35, 1.55, 1.05, 1.05])
         with f_search:
             _html('<div class="jp-filter-lbl">חיפוש מהיר:</div>')
             q_search = st.text_input(
@@ -1539,7 +2014,7 @@ def render_positions_and_log_page() -> None:
             _html('<div class="jp-filter-lbl">סטטוס:</div>')
             flt_status = st.radio(
                 "סטטוס",
-                ["הכל", "פתוחות בלבד", "סגורות בלבד"],
+                ["הכל", "פתוחות בלבד", "סגורות בלבד", "מיצוע"],
                 horizontal=True,
                 label_visibility="collapsed",
                 key="jp_filter_status",
@@ -1563,37 +2038,71 @@ def render_positions_and_log_page() -> None:
                 key="jp_filter_plan",
             )
 
-    def _matches_filters(row: pd.Series, is_row_open: bool) -> bool:
+    is_averaging_mode = flt_status == "מיצוע"
+
+    def _matches_item(sym: str, comp: str, val_pnl: float, plan_flag: str) -> bool:
         if q_search:
-            s_txt = str(row.get("symbol") or "").upper()
-            c_txt = str(row.get("company_name") or "").upper()
-            if q_search not in s_txt and q_search not in c_txt:
+            if q_search not in sym.upper() and q_search not in comp.upper():
                 return False
-
-        if flt_outcome != "הכל":
-            if is_row_open:
-                s_up = str(row["symbol"]).split(":")[-1].strip().upper()
-                lp = price_map.get(s_up, float(row["entry_price"]))
-                val_pnl = (lp - float(row["entry_price"])) * float(row["quantity"])
-            else:
-                val_pnl = float(row["net_pnl"]) if pd.notna(row.get("net_pnl")) else 0.0
-            if flt_outcome == "רווחיות" and val_pnl <= 0:
-                return False
-            if flt_outcome == "מפסידות" and val_pnl >= 0:
-                return False
-
-        if flt_plan != "הכל":
-            p_flag = str(row.get("according_to_plan") or "Yes")
-            if flt_plan == "לפי תוכנית" and p_flag != "Yes":
-                return False
-            if flt_plan == "חריגה" and p_flag == "Yes":
-                return False
-
+        if flt_outcome == "רווחיות" and val_pnl <= 0:
+            return False
+        if flt_outcome == "מפסידות" and val_pnl >= 0:
+            return False
+        if flt_plan == "לפי תוכנית" and plan_flag != "Yes":
+            return False
+        if flt_plan == "חריגה" and plan_flag == "Yes":
+            return False
         return True
 
-    # === ACTIVE POSITIONS TABLE (SINGLE UNIFIED FRAME + PIXEL-ALIGNED HEADERS) ===
-    if flt_status in ("הכל", "פתוחות בלבד"):
-        filtered_open = [r for _, r in open_df.iterrows() if _matches_filters(r, True)] if not open_df.empty else []
+    # === ACTIVE POSITIONS TABLE ===
+    if flt_status in ("הכל", "פתוחות בלבד", "מיצוע"):
+        if is_averaging_mode:
+            raw_open_items = _build_averaged_open_rows(open_df, price_map)
+        else:
+            raw_open_items = []
+            for _, r in open_df.iterrows():
+                s_up = str(r["symbol"]).split(":")[-1].strip().upper()
+                ep = float(r["entry_price"])
+                q = float(r["quantity"])
+                lp = price_map.get(s_up, ep)
+                u_pnl = (lp - ep) * q
+                u_pct = ((lp - ep) / ep * 100.0) if ep > 0 else 0.0
+                raw_open_items.append(
+                    {
+                        "is_grouped": False,
+                        "lot_count": 1,
+                        "trade_id": int(r["id"]),
+                        "symbol": s_up,
+                        "company_name": str(r.get("company_name") or s_up),
+                        "entry_date": r.get("entry_date"),
+                        "quantity": q,
+                        "entry_price": ep,
+                        "live_price": lp,
+                        "pos_val": lp * q,
+                        "cost_val": ep * q,
+                        "pnl_usd": u_pnl,
+                        "pnl_pct": u_pct,
+                        "stop_loss": float(r["stop_loss"]) if pd.notna(r.get("stop_loss")) and float(r["stop_loss"]) > 0 else None,
+                        "take_profit": float(r["take_profit"]) if pd.notna(r.get("take_profit")) and float(r["take_profit"]) > 0 else None,
+                        "according_to_plan": str(r.get("according_to_plan") or "Yes"),
+                    }
+                )
+
+        filtered_open = [
+            it
+            for it in raw_open_items
+            if _matches_item(it["symbol"], it["company_name"], it["pnl_usd"], it["according_to_plan"])
+        ]
+
+        sum_open_filtered = sum(it["pnl_usd"] for it in filtered_open)
+        sum_open_col = "#10B981" if sum_open_filtered >= 0 else "#EF4444"
+        avg_hdr_extra = (
+            f'<span style="background:rgba(167,139,250,0.14); border:1px solid rgba(167,139,250,0.38); '
+            f'color:#C4B5FD; border-radius:999px; padding:2px 11px; font-size:0.76rem; font-weight:800;">'
+            f'מצב מיצוע פעיל · סה"כ רווח/הפסד מסוכם: <span style="color:{sum_open_col};" dir="ltr">{_fmt_usd(sum_open_filtered, signed=True)}</span></span>'
+            if is_averaging_mode
+            else ""
+        )
 
         with st.container():
             _html(
@@ -1604,15 +2113,16 @@ def render_positions_and_log_page() -> None:
                         <span style="color:#38BDF8; font-size:0.9rem;">●</span>
                         <span class="jp-sec-title">פוזיציות פתוחות - Active Positions</span>
                         <span class="jp-count-circle">{len(filtered_open)}</span>
+                        {avg_hdr_extra}
                     </div>
-                    <span class="jp-sec-hint">מסודר אוטומטית בראש הדף · לחץ על שורת מניה לניהול עסקה, עריכת SL/TP וניתוח עומק</span>
+                    <span class="jp-sec-hint">לחץ על שורת מניה לניהול עסקה, עריכת SL/TP וניתוח עומק</span>
                 </div>
                 <div class="jp-active-grid jp-tbl-head">
                     <div class="jp-col-r">מניה</div>
                     <div class="jp-col-r">תאריך פתיחה</div>
                     <div class="jp-col-c">כמות</div>
                     <div class="jp-col-r">שער חי</div>
-                    <div class="jp-col-r">שער כניסה</div>
+                    <div class="jp-col-r">{'שער כניסה ממוצע' if is_averaging_mode else 'שער כניסה'}</div>
                     <div class="jp-col-r">שווי פוזיציה</div>
                     <div class="jp-col-c">רווח / הפסד צף</div>
                     <div class="jp-col-c">יעדי SL / TP וטווח סיכון-סיכוי</div>
@@ -1623,24 +2133,22 @@ def render_positions_and_log_page() -> None:
             if not filtered_open:
                 st.info("אין פוזיציות פתוחות התואמות לסינון הנוכחי.")
             else:
-                for r in filtered_open:
-                    tid = int(r["id"])
-                    sym = str(r["symbol"]).split(":")[-1].strip().upper()
+                for idx_row, it in enumerate(filtered_open):
+                    tid = it["trade_id"]
+                    sym = it["symbol"]
                     m_row = market_by_sym.get(sym)
-                    comp = str(r.get("company_name") or (m_row.get("company_name") if m_row is not None else sym) or sym)
+                    comp = str(it["company_name"] or (m_row.get("company_name") if m_row is not None else sym) or sym)
                     logo = str(m_row.get("logo_url") or "") if m_row is not None and pd.notna(m_row.get("logo_url")) else ""
 
-                    ep = float(r["entry_price"])
-                    qty = float(r["quantity"])
-                    lp = price_map.get(sym, ep)
-                    pos_val = lp * qty
-                    cost_val = ep * qty
-                    u_pnl = (lp - ep) * qty
-                    u_pct = ((lp - ep) / ep * 100.0) if ep > 0 else 0.0
+                    ep = it["entry_price"]
+                    qty = it["quantity"]
+                    lp = it["live_price"]
+                    pos_val = it["pos_val"]
+                    cost_val = it["cost_val"]
+                    u_pnl = it["pnl_usd"]
+                    u_pct = it["pnl_pct"]
 
-                    sl_v = float(r["stop_loss"]) if pd.notna(r.get("stop_loss")) and float(r["stop_loss"]) > 0 else None
-                    tp_v = float(r["take_profit"]) if pd.notna(r.get("take_profit")) and float(r["take_profit"]) > 0 else None
-                    sltp_cell_html, _ = _build_sltp_html(ep, lp, qty, sl_v, tp_v, compact=False)
+                    sltp_cell_html, _ = _build_sltp_html(ep, lp, qty, it["stop_loss"], it["take_profit"], compact=False)
 
                     logo_box = (
                         f'<img src="{html.escape(logo)}" alt="{html.escape(sym)}"/>'
@@ -1649,7 +2157,12 @@ def render_positions_and_log_page() -> None:
                     )
                     pnl_cls = "jp-pnl-win" if u_pnl >= 0 else "jp-pnl-loss"
                     qty_txt = f"{int(qty)}" if float(qty).is_integer() else f"{qty:.2f}"
-                    hold_d = _calc_holding_days(r.get("entry_date"))
+                    hold_d = _calc_holding_days(it["entry_date"])
+                    lot_pill = (
+                        f'<span class="jp-avg-badge">מיצוע {it["lot_count"]} מנות</span>'
+                        if it["is_grouped"]
+                        else ""
+                    )
 
                     with st.container():
                         _html(
@@ -1661,10 +2174,11 @@ def render_positions_and_log_page() -> None:
                                         <div>
                                             <div class="jp-ticker-txt">{html.escape(sym)}</div>
                                             <div class="jp-comp-txt">{html.escape(comp)}</div>
+                                            {lot_pill}
                                         </div>
                                     </div>
                                     <div class="jp-col-r">
-                                        <div class="jp-cell-main">{_ltr(_fmt_date_short(r.get("entry_date")))}</div>
+                                        <div class="jp-cell-main">{_ltr(_fmt_date_short(it["entry_date"]))}</div>
                                         <div class="jp-cell-sub">{hold_d} ימים</div>
                                     </div>
                                     <div class="jp-col-c jp-cell-main">{_ltr(qty_txt)}</div>
@@ -1685,14 +2199,69 @@ def render_positions_and_log_page() -> None:
                             </div>
                             """
                         )
-                        if st.button(" ", key=f"jp_open_row_btn_{tid}", use_container_width=True):
-                            st.session_state["jp_selected_trade_id"] = tid
-                            st.session_state[f"dd_close_panel_open_{tid}"] = False
+                        if st.button(" ", key=f"jp_open_row_btn_{sym}_{tid}_{idx_row}", use_container_width=True):
+                            if it["is_grouped"]:
+                                st.session_state["jp_avg_symbol"] = sym
+                            else:
+                                st.session_state["jp_selected_trade_id"] = tid
+                                st.session_state[f"dd_close_panel_open_{tid}"] = False
+                                st.session_state[f"dd_edit_mode_{tid}"] = False
                             st.rerun()
 
-    # === CLOSED TRADES TABLE (SINGLE UNIFIED FRAME + PIXEL-ALIGNED HEADERS) ===
-    if flt_status in ("הכל", "סגורות בלבד"):
-        filtered_closed = [r for _, r in closed_df.iterrows() if _matches_filters(r, False)] if not closed_df.empty else []
+    # === CLOSED TRADES TABLE (SUPPORTS AVERAGING & LOSS SUMMATION) ===
+    if flt_status in ("הכל", "סגורות בלבד", "מיצוע"):
+        if is_averaging_mode:
+            raw_closed_items = _build_averaged_closed_rows(closed_df)
+        else:
+            raw_closed_items = []
+            for _, r in closed_df.iterrows():
+                s_up = str(r["symbol"]).split(":")[-1].strip().upper()
+                ep = float(r["entry_price"])
+                cp_raw = r.get("close_price") if pd.notna(r.get("close_price")) else r.get("exit_price")
+                cp = float(cp_raw) if cp_raw is not None and pd.notna(cp_raw) else ep
+                q = float(r["quantity"])
+                net_p = float(r["net_pnl"]) if pd.notna(r.get("net_pnl")) else (cp - ep) * q
+                gross_p = float(r["gross_pnl"]) if pd.notna(r.get("gross_pnl")) else (cp - ep) * q
+                tax_p = float(r["tax_paid"]) if pd.notna(r.get("tax_paid")) else 0.0
+                fee_p = float(r["fees"]) if pd.notna(r.get("fees")) else 0.0
+                ret_pct = ((cp - ep) / ep * 100.0) if ep > 0 else 0.0
+                raw_closed_items.append(
+                    {
+                        "is_grouped": False,
+                        "lot_count": 1,
+                        "trade_id": int(r["id"]),
+                        "symbol": s_up,
+                        "company_name": str(r.get("company_name") or s_up),
+                        "entry_date": r.get("entry_date"),
+                        "close_date": r.get("close_date"),
+                        "quantity": q,
+                        "entry_price": ep,
+                        "close_price": cp,
+                        "net_pnl": net_p,
+                        "gross_pnl": gross_p,
+                        "tax_paid": tax_p,
+                        "fees": fee_p,
+                        "ret_pct": ret_pct,
+                        "setup_pattern": str(r.get("setup_pattern") or "").strip() or "ללא Setup",
+                        "according_to_plan": str(r.get("according_to_plan") or "Yes"),
+                    }
+                )
+
+        filtered_closed = [
+            it
+            for it in raw_closed_items
+            if _matches_item(it["symbol"], it["company_name"], it["net_pnl"], it["according_to_plan"])
+        ]
+
+        sum_closed_filtered = sum(it["net_pnl"] for it in filtered_closed)
+        sum_cl_col = "#10B981" if sum_closed_filtered >= 0 else "#EF4444"
+        closed_sum_badge = (
+            f'<span style="background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.32); '
+            f'color:#CBD5E1; border-radius:999px; padding:2px 11px; font-size:0.76rem; font-weight:800;">'
+            f'סה"כ רווח / הפסד מסוכם: <span style="color:{sum_cl_col};" dir="ltr">{_fmt_usd(sum_closed_filtered, signed=True)}</span></span>'
+            if (is_averaging_mode or flt_outcome != "הכל")
+            else ""
+        )
 
         with st.container():
             _html(
@@ -1703,6 +2272,7 @@ def render_positions_and_log_page() -> None:
                         <span style="color:#10B981; font-size:0.9rem;">●</span>
                         <span class="jp-sec-title">יומן עסקאות סגורות - Closed Trade Log</span>
                         <span class="jp-count-circle" style="color:#10B981; border-color:rgba(16,185,129,0.35); background:rgba(16,185,129,0.12);">{len(filtered_closed)}</span>
+                        {closed_sum_badge}
                     </div>
                     <span class="jp-sec-hint">לחץ על שורת עסקה לצפייה בצילום המצב הטכני ועריכת מסקנות</span>
                 </div>
@@ -1720,35 +2290,54 @@ def render_positions_and_log_page() -> None:
             if not filtered_closed:
                 st.info("אין עסקאות סגורות התואמות לסינון הנוכחי.")
             else:
-                for r in filtered_closed:
-                    tid = int(r["id"])
-                    sym = str(r["symbol"]).split(":")[-1].strip().upper()
+                for idx_c, it in enumerate(filtered_closed):
+                    tid = it["trade_id"]
+                    sym = it["symbol"]
                     m_row = market_by_sym.get(sym)
-                    comp = str(r.get("company_name") or (m_row.get("company_name") if m_row is not None else sym) or sym)
+                    comp = str(it["company_name"] or (m_row.get("company_name") if m_row is not None else sym) or sym)
                     logo = str(m_row.get("logo_url") or "") if m_row is not None and pd.notna(m_row.get("logo_url")) else ""
 
-                    ep = float(r["entry_price"])
-                    cp_raw = r.get("close_price") if pd.notna(r.get("close_price")) else r.get("exit_price")
-                    cp = float(cp_raw) if cp_raw is not None and pd.notna(cp_raw) else ep
-                    qty = float(r["quantity"])
+                    ep = it["entry_price"]
+                    cp = it["close_price"]
+                    qty = it["quantity"]
                     qty_txt = f"{int(qty)}" if float(qty).is_integer() else f"{qty:.2f}"
 
-                    net_p = float(r["net_pnl"]) if pd.notna(r.get("net_pnl")) else (cp - ep) * qty
-                    gross_p = float(r["gross_pnl"]) if pd.notna(r.get("gross_pnl")) else (cp - ep) * qty
-                    tax_p = float(r["tax_paid"]) if pd.notna(r.get("tax_paid")) else 0.0
-                    fee_p = float(r["fees"]) if pd.notna(r.get("fees")) else 0.0
-                    ret_pct = ((cp - ep) / ep * 100.0) if ep > 0 else 0.0
+                    net_p = it["net_pnl"]
+                    gross_p = it["gross_pnl"]
+                    tax_p = it["tax_paid"]
+                    fee_p = it["fees"]
+                    ret_pct = it["ret_pct"]
 
-                    hold_d = _calc_holding_days(r.get("entry_date"), r.get("close_date"))
-                    dt_range = f"{_fmt_date_short(r.get('entry_date'))} ← {_fmt_date_short(r.get('close_date'))}"
+                    hold_d = _calc_holding_days(it["entry_date"], it["close_date"])
+                    dt_range = f"{_fmt_date_short(it['entry_date'])} ← {_fmt_date_short(it['close_date'])}"
 
-                    setup_txt = str(r.get("setup_pattern") or "").strip() or "ללא Setup"
-                    plan_ok = str(r.get("according_to_plan") or "Yes") == "Yes"
+                    setup_txt = it["setup_pattern"]
+                    plan_ok = it["according_to_plan"] == "Yes"
                     plan_pill = (
                         '<span class="dd-plan-badge-ok" style="font-size:0.72rem; padding:2px 8px;">✓ לפי תוכנית</span>'
                         if plan_ok
                         else '<span class="dd-plan-badge-no" style="font-size:0.72rem; padding:2px 8px;">✗ חריגה</span>'
                     )
+
+                    # In averaging mode: losing trades sum P&L without averaging price; winners show averaged prices
+                    is_losing_avg = is_averaging_mode and net_p < 0
+                    if is_losing_avg:
+                        exec_main = f'<span style="color:#EF4444;">סיכום הפסד ({it["lot_count"]} עסקאות)</span>'
+                        exec_sub = f"סה\"כ {qty_txt} מניות נסחרו"
+                        lot_pill = (
+                            f'<span class="jp-avg-badge" style="color:#FCA5A5; border-color:rgba(239,68,68,0.4); background:rgba(239,68,68,0.12);">'
+                            f'סכום {it["lot_count"]} מנות</span>'
+                            if it["is_grouped"]
+                            else ""
+                        )
+                    else:
+                        exec_main = _ltr(f"{_fmt_usd(ep)} → {_fmt_usd(cp)}")
+                        exec_sub = f"{qty_txt} מניות" + (" (ממוצע)" if it["is_grouped"] else "")
+                        lot_pill = (
+                            f'<span class="jp-avg-badge">מיצוע {it["lot_count"]} מנות</span>'
+                            if it["is_grouped"]
+                            else ""
+                        )
 
                     logo_box = (
                         f'<img src="{html.escape(logo)}" alt="{html.escape(sym)}"/>'
@@ -1767,6 +2356,7 @@ def render_positions_and_log_page() -> None:
                                         <div>
                                             <div class="jp-ticker-txt">{html.escape(sym)}</div>
                                             <div class="jp-comp-txt">{html.escape(comp)}</div>
+                                            {lot_pill}
                                         </div>
                                     </div>
                                     <div class="jp-col-r">
@@ -1774,8 +2364,8 @@ def render_positions_and_log_page() -> None:
                                         <div class="jp-cell-sub">{hold_d} ימים</div>
                                     </div>
                                     <div class="jp-col-r">
-                                        <div class="jp-cell-main">{_ltr(f"{_fmt_usd(ep)} → {_fmt_usd(cp)}")}</div>
-                                        <div class="jp-cell-sub">{qty_txt} מניות</div>
+                                        <div class="jp-cell-main">{exec_main}</div>
+                                        <div class="jp-cell-sub">{exec_sub}</div>
                                     </div>
                                     <div class="jp-col-c">
                                         <div class="jp-pnl-box {pnl_cls}">
@@ -1795,11 +2385,25 @@ def render_positions_and_log_page() -> None:
                             </div>
                             """
                         )
-                        if st.button(" ", key=f"jp_closed_row_btn_{tid}", use_container_width=True):
+                        if st.button(" ", key=f"jp_closed_row_btn_{sym}_{tid}_{idx_c}", use_container_width=True):
                             st.session_state["jp_selected_trade_id"] = tid
+                            st.session_state[f"dd_edit_mode_{tid}"] = False
                             st.rerun()
 
-    # === OPEN DEEP DIVE MODAL IF A ROW WAS CLICKED ===
+    # === OPEN AVERAGED LOT-BREAKDOWN MODAL IF AN AVERAGED MULTI-LOT ROW WAS CLICKED ===
+    avg_sym = st.session_state.get("jp_avg_symbol")
+    if avg_sym and not open_df.empty:
+        sym_lots = open_df[
+            open_df["symbol"].astype(str).str.split(":").str[-1].str.strip().str.upper() == avg_sym
+        ]
+        if len(sym_lots) > 1:
+            m_row = market_by_sym.get(avg_sym)
+            lp_avg = price_map.get(avg_sym, float(sym_lots.iloc[0]["entry_price"]))
+            open_averaged_lots_modal(avg_sym, sym_lots, m_row, lp_avg)
+        else:
+            st.session_state["jp_avg_symbol"] = None
+
+    # === OPEN DEEP DIVE MODAL IF A TRADE ROW WAS CLICKED ===
     selected_tid = st.session_state.get("jp_selected_trade_id")
     if selected_tid is not None and not df_trades.empty:
         matched_rows = df_trades[df_trades["id"] == selected_tid]
