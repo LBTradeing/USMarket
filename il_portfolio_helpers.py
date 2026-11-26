@@ -9,7 +9,7 @@ import streamlit as st
 from supabase import Client, create_client
 
 ISRAEL_TZ = ZoneInfo("Asia/Jerusalem")
-DEFAULT_INFLATION_RATE = 0.03
+FALLBACK_ANNUAL_INFLATION = 0.03
 
 
 def get_supabase_client() -> Client:
@@ -70,10 +70,15 @@ def _fetch_all_rows(
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def load_il_raw_tables() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+def load_il_raw_tables() -> Tuple[
+    List[Dict[str, Any]],
+    List[Dict[str, Any]],
+    List[Dict[str, Any]],
+    List[Dict[str, Any]],
+]:
     """
-    טעינה עצלה (Lazy Loading) של שלוש טבלאות התיק הישראלי מ-Supabase.
-    הנתונים נשמרים ב-Cache ל-10 דקות או עד ביצוע פעולה / רענון שערים ידני.
+    טעינה עצלה (Lazy Loading) של טבלאות התיק הישראלי ומדד המחירים לצרכן מ-Supabase.
+    הנתונים נשמרים ב-Cache ל-10 דקות או עד ביצוע פעולה / רענון ידני.
     """
     client = get_supabase_client()
     funds = _fetch_all_rows(client, "il_funds", "*", order_col="fund_id")
@@ -84,7 +89,17 @@ def load_il_raw_tables() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Li
         "fund_id,price_date,price_agorot,price_nis,source",
         order_col="price_date",
     )
-    return funds, transactions, prices
+    try:
+        cpi_rows = _fetch_all_rows(
+            client,
+            "il_cpi_monthly",
+            "cpi_month,index_value,monthly_change_pct",
+            order_col="cpi_month",
+        )
+    except Exception:
+        cpi_rows = []
+
+    return funds, transactions, prices, cpi_rows
 
 
 def clear_il_portfolio_cache() -> None:
@@ -92,17 +107,39 @@ def clear_il_portfolio_cache() -> None:
     load_il_raw_tables.clear()
 
 
-def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RATE) -> Dict[str, Any]:
+def compute_il_portfolio_analytics() -> Dict[str, Any]:
     """
     מנוע החישוב המרכזי של התיק הישראלי:
     - מחשב שווי נוכחי, עלות ממוצעת, רווח/הפסד, שינוי יומי ומגמת 10 ימים לכל קרן פעילה.
     - משחזר שווי היסטורי ("מכונת זמן") כולל 7 הקרנות ההיסטוריות שנמכרו בעבר.
-    - מחשב תשואות תקופתיות, שנתיות וחודשיות (נומינלי מול ריאלי).
+    - מחשב תשואות תקופתיות, שנתיות וחודשיות (נומינלי מול ריאלי לפי מדד הלמ"ס).
     - מפיק נתוני פילוח לגרפים מתוך המטא-דאטה של הקרנות.
     """
-    funds_rows, tx_rows, price_rows = load_il_raw_tables()
+    funds_rows, tx_rows, price_rows, cpi_rows = load_il_raw_tables()
 
     funds_map: Dict[str, Dict[str, Any]] = {str(f["fund_id"]): f for f in funds_rows}
+
+    # בניית מפת אינפלציה חודשית אמיתית (YYYY-MM -> שיעור שינוי עשרוני, למשל 0.003 עבור 0.3%)
+    cpi_monthly_rate: Dict[str, float] = {}
+    for c in cpi_rows:
+        m_key = str(c.get("cpi_month") or "").strip()
+        if m_key and c.get("monthly_change_pct") is not None:
+            cpi_monthly_rate[m_key] = float(c["monthly_change_pct"]) / 100.0
+
+    has_live_cpi = len(cpi_monthly_rate) > 0
+    if has_live_cpi:
+        sorted_cpi_keys = sorted(cpi_monthly_rate.keys())
+        recent_12 = [cpi_monthly_rate[k] for k in sorted_cpi_keys[-12:]]
+        default_monthly_infl = sum(recent_12) / len(recent_12)
+    else:
+        default_monthly_infl = ((1.0 + FALLBACK_ANNUAL_INFLATION) ** (1.0 / 12.0)) - 1.0
+
+    def _get_month_infl_rate(y: int, m: int, is_current_in_progress: bool = False) -> float:
+        key = f"{y:04d}-{m:02d}"
+        if key in cpi_monthly_rate:
+            return cpi_monthly_rate[key]
+        # עבור החודש השוטף שעדיין לא פורסם לו מדד רשמי, משתמשים בממוצע 12 חודשים אחרונים
+        return default_monthly_infl if not is_current_in_progress else (default_monthly_infl * 0.5)
 
     # 1. ארגון היסטוריית שערים לפי קרן (ממוין כרונולוגית עולה לחיפוש בינארי מהיר)
     prices_by_fund: Dict[str, List[Tuple[str, float, float]]] = {}
@@ -227,7 +264,6 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
 
     totals["net_mgmt_fees"] = abs(totals["mgmt_fees"] - totals["interest"])
 
-    # שליפת שער בשקלים ביום נתון או לפניו
     def _get_price_nis_at(fid: str, target_date_str: str) -> float:
         if fid in price_lookup:
             dates_arr, _, nis_arr = price_lookup[fid]
@@ -243,7 +279,6 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
                 return abs(last_tx[2]) / abs(last_tx[1])
         return 0.0
 
-    # מכונת הזמן: שווי התיק הכולל (כל 21 הקרנות) בתאריך נתון
     def _calc_portfolio_value_at(target_date_str: str) -> float:
         total_val = 0.0
         for fid, st_obj in fund_state.items():
@@ -300,7 +335,6 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
         total_profit = cur_val - cost_nis
         total_yield = ((total_profit / cost_nis) * 100.0) if cost_nis > 0 else 0.0
 
-        # שינוי יומי מול השער הקודם בטבלה (0% אם טרם התעדכן שער חדש)
         if len(nis_arr) >= 2:
             prev_p_nis = nis_arr[-2]
             daily_change_nis = (cur_p_nis - prev_p_nis) * qty
@@ -315,7 +349,6 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
         total_value_current += cur_val
         total_cost_active += cost_nis
 
-        # תשואות ורווחים לפי טווחי זמן מתגלגלים
         periods_dict: Dict[str, Optional[float]] = {}
         for k, delta_days in intervals_days.items():
             target_dt_str = (today_dt - timedelta(days=delta_days)).isoformat()
@@ -335,7 +368,6 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
             agg_periods[k]["curr"] += cur_val
             agg_periods[k]["past"] += (qty * p_past_nis) if p_past_nis > 0 else cost_nis
 
-        # ביצועי הקרן לפי שנים קלנדריות
         years_dict: Dict[int, Dict[str, Optional[float]]] = {}
         for y in range(2020, current_year + 1):
             eoy_prev = f"{y - 1}-12-31"
@@ -387,7 +419,6 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
             "years": years_dict,
         })
 
-    # מיון הקרנות לפי שווי החזקה יורד וחישוב משקל בתיק
     fund_analysis.sort(key=lambda x: x["cur_val"], reverse=True)
     for f in fund_analysis:
         f["weight_pct"] = (f["cur_val"] / total_value_current * 100.0) if total_value_current > 0 else 0.0
@@ -402,54 +433,20 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
         timeframes_profit[k] = diff
         timeframes_returns[k] = (diff / vals["past"] * 100.0) if vals["past"] > 0 else 0.0
 
-    # 4. חישוב שנתי וחודשי היסטורי מלא (כולל קרנות היסטוריות שנמכרו)
-    monthly_infl = ((1.0 + inflation_rate) ** (1.0 / 12.0)) - 1.0
+    # 4. חישוב שנתי וחודשי היסטורי מלא (כולל אינפלציה חודשית ושנתית אמיתית מהלמ"ס)
     annual_stats: Dict[int, Dict[str, float]] = {}
     monthly_stats: Dict[int, Dict[int, Dict[str, float]]] = {}
 
     for y in range(2020, current_year + 1):
-        t_start_y = f"{y - 1}-12-31"
-        t_end_y = today_str if y == current_year else f"{y}-12-31"
-
-        val_start_y = _calc_portfolio_value_at(t_start_y)
-        val_end_y = _calc_portfolio_value_at(t_end_y)
-        raw_y = annual_raw.get(
-            y, {"net_flow": 0.0, "trading_fees": 0.0, "mgmt_fees": 0.0, "interest": 0.0, "taxes": 0.0}
-        )
-
-        profit_y = val_end_y - val_start_y - raw_y["net_flow"]
-        denom_y = val_start_y + (raw_y["net_flow"] / 2.0)
-        yield_y = (profit_y / denom_y * 100.0) if denom_y > 0 else 0.0
-        real_yield_y = (((1.0 + yield_y / 100.0) / (1.0 + inflation_rate)) - 1.0) * 100.0
-        real_profit_y = profit_y - (val_start_y * inflation_rate)
-        net_mgmt_y = abs(raw_y["mgmt_fees"] - raw_y["interest"])
-
-        annual_stats[y] = {
-            "start_balance": val_start_y,
-            "end_balance": val_end_y,
-            "investment": raw_y["net_flow"],
-            "profit": profit_y,
-            "yield": yield_y,
-            "real_profit": real_profit_y,
-            "real_yield": real_yield_y,
-            "trading_fees": raw_y["trading_fees"],
-            "mgmt_fees": raw_y["mgmt_fees"],
-            "interest": raw_y["interest"],
-            "net_mgmt_fees": net_mgmt_y,
-            "total_fees": raw_y["trading_fees"] + net_mgmt_y,
-            "taxes": raw_y["taxes"],
-        }
-
         monthly_stats[y] = {}
         max_m = current_month if y == current_year else 12
+        year_infl_factor = 1.0
+
         for m in range(1, max_m + 1):
             prev_month_last_day = (date(y, m, 1) - timedelta(days=1)).isoformat()
             last_day_num = monthrange(y, m)[1]
-            cur_month_end = (
-                today_str
-                if (y == current_year and m == current_month)
-                else date(y, m, last_day_num).isoformat()
-            )
+            is_cur_m = (y == current_year and m == current_month)
+            cur_month_end = today_str if is_cur_m else date(y, m, last_day_num).isoformat()
 
             val_start_m = _calc_portfolio_value_at(prev_month_last_day)
             val_end_m = _calc_portfolio_value_at(cur_month_end)
@@ -457,11 +454,15 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
                 m, {"net_flow": 0.0, "trading_fees": 0.0, "mgmt_fees": 0.0, "interest": 0.0, "taxes": 0.0}
             )
 
+            m_infl = _get_month_infl_rate(y, m, is_current_in_progress=is_cur_m)
+            year_infl_factor *= (1.0 + m_infl)
+
             profit_m = val_end_m - val_start_m - raw_m["net_flow"]
             denom_m = val_start_m + (raw_m["net_flow"] / 2.0)
             yield_m = (profit_m / denom_m * 100.0) if denom_m > 0 else 0.0
-            real_yield_m = (((1.0 + yield_m / 100.0) / (1.0 + monthly_infl)) - 1.0) * 100.0
-            real_profit_m = profit_m - (val_start_m * monthly_infl)
+            real_yield_m = (((1.0 + yield_m / 100.0) / (1.0 + m_infl)) - 1.0) * 100.0
+            erosion_m = max(0.0, denom_m) * m_infl
+            real_profit_m = profit_m - erosion_m
             net_mgmt_m = abs(raw_m["mgmt_fees"] - raw_m["interest"])
 
             monthly_stats[y][m] = {
@@ -470,6 +471,8 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
                 "investment": raw_m["net_flow"],
                 "profit": profit_m,
                 "yield": yield_m,
+                "cpi_pct": m_infl * 100.0,
+                "inflation_erosion_nis": erosion_m,
                 "real_profit": real_profit_m,
                 "real_yield": real_yield_m,
                 "trading_fees": raw_m["trading_fees"],
@@ -479,6 +482,42 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
                 "total_fees": raw_m["trading_fees"] + net_mgmt_m,
                 "taxes": raw_m["taxes"],
             }
+
+        t_start_y = f"{y - 1}-12-31"
+        t_end_y = today_str if y == current_year else f"{y}-12-31"
+
+        val_start_y = _calc_portfolio_value_at(t_start_y)
+        val_end_y = _calc_portfolio_value_at(t_end_y)
+        raw_y = annual_raw.get(
+            y, {"net_flow": 0.0, "trading_fees": 0.0, "mgmt_fees": 0.0, "interest": 0.0, "taxes": 0.0}
+        )
+
+        year_infl_rate = year_infl_factor - 1.0
+        profit_y = val_end_y - val_start_y - raw_y["net_flow"]
+        denom_y = val_start_y + (raw_y["net_flow"] / 2.0)
+        yield_y = (profit_y / denom_y * 100.0) if denom_y > 0 else 0.0
+        real_yield_y = (((1.0 + yield_y / 100.0) / (1.0 + year_infl_rate)) - 1.0) * 100.0
+        erosion_y = max(0.0, denom_y) * year_infl_rate
+        real_profit_y = profit_y - erosion_y
+        net_mgmt_y = abs(raw_y["mgmt_fees"] - raw_y["interest"])
+
+        annual_stats[y] = {
+            "start_balance": val_start_y,
+            "end_balance": val_end_y,
+            "investment": raw_y["net_flow"],
+            "profit": profit_y,
+            "yield": yield_y,
+            "cpi_pct": year_infl_rate * 100.0,
+            "inflation_erosion_nis": erosion_y,
+            "real_profit": real_profit_y,
+            "real_yield": real_yield_y,
+            "trading_fees": raw_y["trading_fees"],
+            "mgmt_fees": raw_y["mgmt_fees"],
+            "interest": raw_y["interest"],
+            "net_mgmt_fees": net_mgmt_y,
+            "total_fees": raw_y["trading_fees"] + net_mgmt_y,
+            "taxes": raw_y["taxes"],
+        }
 
     # 5. נתוני פילוח לגרפים מתוך המטא-דאטה של הקרנות
     holdings_pie: Dict[str, float] = {}
@@ -530,7 +569,7 @@ def compute_il_portfolio_analytics(inflation_rate: float = DEFAULT_INFLATION_RAT
             "hedged_map": hedged_map,
         },
         "all_funds": list(funds_map.values()),
-        "inflation_rate": inflation_rate,
+        "has_live_cpi": has_live_cpi,
         "as_of_date": today_str,
     }
 
@@ -639,10 +678,10 @@ def record_il_transaction(
 
 
 def trigger_manual_price_sync() -> Dict[str, Any]:
-    """מריץ סנכרון שערים ידני מתוך הממשק ומנקה את ה-Cache."""
+    """מריץ סנכרון שערים ומדד ידני מתוך הממשק ומנקה את ה-Cache."""
     from il_price_fetcher import sync_all_active_fund_prices
 
     client = get_supabase_client()
-    result = sync_all_active_fund_prices(supabase=client)
+    result = sync_all_active_fund_prices(supabase=client, include_cpi=True)
     clear_il_portfolio_cache()
     return result
