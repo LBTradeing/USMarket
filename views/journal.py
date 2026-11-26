@@ -427,11 +427,17 @@ def compute_dashboard_metrics(
         sym = str(r["symbol"]).upper()
         ep = float(r["entry_price"])
         qty = float(r["quantity"])
-        cost = ep * qty
+        raw_pa = r.get("purchase_amount")
+        cost = float(raw_pa) if pd.notna(raw_pa) and float(raw_pa) > 0 else (ep * qty)
         invested_open += cost
-        live_p = price_map.get(sym, ep)
-        pnl_u = (live_p - ep) * qty
-        pnl_pct = ((live_p - ep) / ep * 100.0) if ep > 0 else 0.0
+        if sym in price_map:
+            live_p = price_map[sym]
+            pnl_u = (live_p * qty) - cost
+            pnl_pct = (pnl_u / cost * 100.0) if cost > 0 else 0.0
+        else:
+            live_p = ep
+            pnl_u = 0.0
+            pnl_pct = 0.0
         open_pnl += pnl_u
         sl_val = float(r["stop_loss"]) if pd.notna(r.get("stop_loss")) else None
         open_positions_list.append(
