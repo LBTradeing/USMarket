@@ -42,6 +42,24 @@ def get_supabase_client() -> Client:
     return create_client(url, key)
 
 
+def _normalize_price_unit(
+    price_val: float,
+    last_known_price: Optional[float],
+    max_daily_jump_pct: float = 0.25,
+) -> float:
+    """מנרמל שער משקלים לאגורות אם האתר החזיר ערך בשקלים (למשל 6.35 במקום 635)."""
+    if not last_known_price or last_known_price <= 0:
+        return price_val
+
+    if abs(price_val - last_known_price) / last_known_price <= max_daily_jump_pct:
+        return price_val
+
+    if abs((price_val * 100.0) - last_known_price) / last_known_price <= max_daily_jump_pct:
+        return price_val * 100.0
+
+    return price_val
+
+
 def _is_valid_price(
     price_agorot: Optional[float],
     fund_id: str,
@@ -66,8 +84,12 @@ def _is_valid_price(
     return True
 
 
-def _fetch_from_bizportal(fund_id: str, session: requests.Session) -> Optional[Tuple[float, str]]:
-    """מקור 1: דף הקרן באתר ביזפורטל."""
+def _fetch_from_bizportal(
+    fund_id: str,
+    session: requests.Session,
+    isin: Optional[str] = None,
+) -> Optional[Tuple[float, str]]:
+    """מקור 1 (ראשי): דף הקרן באתר ביזפורטל."""
     section = "tradedfunds" if fund_id.startswith("11") else "mutualfunds"
     url = f"https://www.bizportal.co.il/{section}/quote/generalview/{fund_id}"
     resp = session.get(url, headers=BROWSER_HEADERS, timeout=10)
@@ -87,8 +109,96 @@ def _fetch_from_bizportal(fund_id: str, session: requests.Session) -> Optional[T
     return None
 
 
-def _fetch_from_maya(fund_id: str, session: requests.Session) -> Optional[Tuple[float, str]]:
-    """מקור 2: API של מאיה (הבורסה לניירות ערך בתל אביב)."""
+def _fetch_from_sponser(
+    fund_id: str,
+    session: requests.Session,
+    isin: Optional[str] = None,
+) -> Optional[Tuple[float, str]]:
+    """מקור 2: דף הקרן/נייר באתר ספונסר (sponser.co.il)."""
+    candidate_urls = [
+        f"https://www.sponser.co.il/Fund.aspx?Id={fund_id}",
+        f"https://www.sponser.co.il/Paper.aspx?Id={fund_id}",
+    ]
+    patterns = [
+        r'(?:מחיר\s*קנייה|מחיר\s*פדיון|שער\s*אחרון|שער\s*בסיס)[^0-9]{0,80}(?<!\d)([0-9]{1,4}(?:,[0-9]{3})*(?:\.[0-9]{1,4})?)(?!\d)',
+        r'id=["\'][^"\']*(?:lblPrice|lblBuyPrice|LastRate)[^"\']*["\'][^>]*>\s*([0-9]{1,4}(?:,[0-9]{3})*(?:\.[0-9]{1,4})?)\s*<',
+    ]
+
+    for url in candidate_urls:
+        try:
+            resp = session.get(url, headers=BROWSER_HEADERS, timeout=6)
+            if resp.status_code != 200:
+                continue
+            html = resp.text
+            for pat in patterns:
+                m = re.search(pat, html)
+                if m:
+                    return float(m.group(1).replace(",", "")), "sponser"
+        except Exception:
+            continue
+
+    return None
+
+
+def _fetch_from_investing(
+    fund_id: str,
+    session: requests.Session,
+    isin: Optional[str] = None,
+) -> Optional[Tuple[float, str]]:
+    """מקור 3: Investing.com (איתור הדף לפי ISIN או מספר נייר וחילוץ השער האחרון)."""
+    search_terms = [t for t in [isin, fund_id] if t]
+    quote_path: Optional[str] = None
+
+    for term in search_terms:
+        try:
+            search_url = f"https://api.investing.com/api/search/v2/search?q={term}"
+            headers = {
+                **BROWSER_HEADERS,
+                "Accept": "application/json",
+                "domain-id": "il",
+            }
+            s_resp = session.get(search_url, headers=headers, timeout=6)
+            if s_resp.status_code == 200:
+                s_data = s_resp.json()
+                quotes = s_data.get("quotes") or []
+                for q in quotes:
+                    url_candidate = q.get("url") or ""
+                    if url_candidate.startswith("/"):
+                        quote_path = url_candidate
+                        break
+            if quote_path:
+                break
+        except Exception:
+            continue
+
+    if not quote_path:
+        return None
+
+    page_url = f"https://il.investing.com{quote_path}"
+    p_resp = session.get(page_url, headers=BROWSER_HEADERS, timeout=8)
+    if p_resp.status_code != 200:
+        return None
+
+    html = p_resp.text
+    patterns = [
+        r'data-test=["\']instrument-price-last["\'][^>]*>\s*([0-9]{1,4}(?:,[0-9]{3})*(?:\.[0-9]{1,4})?)\s*<',
+        r'id=["\']last_last["\'][^>]*>\s*([0-9]{1,4}(?:,[0-9]{3})*(?:\.[0-9]{1,4})?)\s*<',
+        r'"last"\s*:\s*([0-9]+(?:\.[0-9]+)?)',
+    ]
+    for pat in patterns:
+        m = re.search(pat, html)
+        if m:
+            return float(m.group(1).replace(",", "")), "investing"
+
+    return None
+
+
+def _fetch_from_maya(
+    fund_id: str,
+    session: requests.Session,
+    isin: Optional[str] = None,
+) -> Optional[Tuple[float, str]]:
+    """מקור 4: API של מאיה (הבורסה לניירות ערך בתל אביב)."""
     url = f"https://mayaapi.tase.co.il/api/fund/details?fundId={fund_id}"
     headers = {
         **BROWSER_HEADERS,
@@ -119,8 +229,12 @@ def _fetch_from_maya(fund_id: str, session: requests.Session) -> Optional[Tuple[
     return price_val, "maya_api"
 
 
-def _fetch_from_funder(fund_id: str, session: requests.Session) -> Optional[Tuple[float, str]]:
-    """מקור 3: דף הקרן באתר Funder."""
+def _fetch_from_funder(
+    fund_id: str,
+    session: requests.Session,
+    isin: Optional[str] = None,
+) -> Optional[Tuple[float, str]]:
+    """מקור 5: דף הקרן באתר Funder."""
     url = f"https://www.funder.co.il/fund/{fund_id}"
     resp = session.get(url, headers=BROWSER_HEADERS, timeout=4)
     if resp.status_code != 200:
@@ -139,8 +253,12 @@ def _fetch_from_funder(fund_id: str, session: requests.Session) -> Optional[Tupl
     return None
 
 
-def _fetch_from_yahoo(fund_id: str, session: requests.Session) -> Optional[Tuple[float, str]]:
-    """מקור 4: Yahoo Finance (רלוונטי בעיקר לקרנות סל סחירות עם סיומת .TA)."""
+def _fetch_from_yahoo(
+    fund_id: str,
+    session: requests.Session,
+    isin: Optional[str] = None,
+) -> Optional[Tuple[float, str]]:
+    """מקור 6: Yahoo Finance (רלוונטי בעיקר לקרנות סל סחירות עם סיומת .TA)."""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{fund_id}.TA?range=5d&interval=1d"
     resp = session.get(url, headers=BROWSER_HEADERS, timeout=6)
     if resp.status_code != 200:
@@ -168,19 +286,28 @@ def fetch_single_fund_quote(
     fund_id: str,
     target_date: str,
     last_known_price: Optional[float] = None,
+    isin: Optional[str] = None,
     session: Optional[requests.Session] = None,
 ) -> Optional[Dict[str, Any]]:
     """מנסה למשוך את השער העדכני לקרן בודדת לפי סדר עדיפויות ושומר תחת target_date."""
     own_session = session is None
     sess = session or requests.Session()
 
-    sources = [_fetch_from_bizportal, _fetch_from_maya, _fetch_from_funder, _fetch_from_yahoo]
+    sources = [
+        _fetch_from_bizportal,
+        _fetch_from_sponser,
+        _fetch_from_investing,
+        _fetch_from_maya,
+        _fetch_from_funder,
+        _fetch_from_yahoo,
+    ]
     try:
         for fetcher in sources:
             try:
-                res = fetcher(fund_id, sess)
+                res = fetcher(fund_id, sess, isin=isin)
                 if res:
-                    price_val, src_name = res
+                    raw_price, src_name = res
+                    price_val = _normalize_price_unit(raw_price, last_known_price)
                     if _is_valid_price(price_val, fund_id, last_known_price):
                         return {
                             "fund_id": fund_id,
@@ -242,7 +369,6 @@ def sync_il_cpi_monthly(supabase: Optional[Client] = None) -> int:
                 "monthly_change_pct": pct,
             })
 
-        # מיון כרונולוגי להשלמת אחוז שינוי אם שדה percent חסר ברשומה מסוימת
         parsed_items.sort(key=lambda x: x["cpi_month"])
         records_to_upsert: List[Dict[str, Any]] = []
 
@@ -283,7 +409,7 @@ def sync_all_active_fund_prices(
     client = supabase or get_supabase_client()
     run_date = target_date or datetime.now(ISRAEL_TZ).date().isoformat()
 
-    funds_resp = client.table("il_funds").select("fund_id, name").eq("is_active", True).execute()
+    funds_resp = client.table("il_funds").select("fund_id, name, isin").eq("is_active", True).execute()
     active_funds = funds_resp.data or []
     if not active_funds:
         return {"updated_count": 0, "total_active": 0, "failed_funds": [], "details": [], "cpi_synced": 0}
@@ -311,10 +437,12 @@ def sync_all_active_fund_prices(
         for f in active_funds:
             fid = f["fund_id"]
             fname = f["name"]
+            fisin = f.get("isin")
             quote = fetch_single_fund_quote(
                 fid,
                 target_date=run_date,
                 last_known_price=last_prices.get(fid),
+                isin=fisin,
                 session=sess,
             )
             if quote:
