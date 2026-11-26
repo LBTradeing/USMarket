@@ -1,0 +1,34 @@
+name: Daily IL Fund Prices Update
+
+on:
+  schedule:
+    # ריצה יומית ב-20:30 UTC (22:30/23:30 שעון ישראל) בימים א'-ו'
+    - cron: "30 20 * * 0-5"
+  workflow_dispatch:
+    inputs:
+      delete_date_before_fetch:
+        description: "אופציונלי לבדיקה: תאריך למחיקה לפני משיכה (למשל 2026-11-26)"
+        required: false
+        default: ""
+
+jobs:
+  update-prices:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install supabase requests
+
+      - name: Fetch and upsert daily IL fund prices
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY || secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_ANON_KEY }}
+          DELETE_TEST_DATE: ${{ github.event.inputs.delete_date_before_fetch }}
+        run: python il_price_fetcher.py
