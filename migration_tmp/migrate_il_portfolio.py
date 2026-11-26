@@ -22,11 +22,24 @@ def get_supabase_client() -> Client:
     return create_client(url, key)
 
 
+def parse_num(val):
+    """ממיר ערך מספרי גם אם יש בו פסיקים, רווחים או סימן ₪."""
+    if pd.isna(val):
+        return None
+    s = str(val).replace(",", "").replace("₪", "").strip()
+    if not s or s in ("-", "nan", "None", "NaN", "<NA>"):
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 def parse_pct(val):
     if pd.isna(val):
         return None
-    s = str(val).replace("%", "").strip()
-    if not s or s == "-":
+    s = str(val).replace("%", "").replace(",", "").strip()
+    if not s or s in ("-", "nan", "None", "NaN", "<NA>"):
         return None
     try:
         return round(float(s), 4)
@@ -69,10 +82,10 @@ def main():
     print("1. קורא ומנקה נתונים מקובצי ה-CSV...")
     hist = pd.read_csv(history_file)
     hist["clean_id"] = (
-        hist["מס' נייר / סימבול"].fillna("").astype(str).str.replace(".0", "", regex=False).str.strip()
+        hist["מס' נייר / סימבול"].astype("string").fillna("").str.replace(".0", "", regex=False).str.strip()
     )
-    hist["clean_name"] = hist["שם נייר"].fillna("").astype(str).str.strip()
-    hist["clean_action"] = hist["סוג פעולה"].fillna("").astype(str).str.strip()
+    hist["clean_name"] = hist["שם נייר"].astype("string").fillna("").str.strip()
+    hist["clean_action"] = hist["סוג פעולה"].astype("string").fillna("").str.strip()
 
     # --- קטלוג קרנות (il_funds) ---
     funds_dict = {}
@@ -130,10 +143,14 @@ def main():
         if name in ("מס לשלם", "מס עתידי"):
             continue
 
-        qty = abs(float(row["כמות"])) if pd.notna(row["כמות"]) else 0.0
-        exec_price = abs(float(row["שער ביצוע"])) if pd.notna(row["שער ביצוע"]) else 0.0
-        fee = abs(float(row["עמלת פעולה"])) if pd.notna(row["עמלת פעולה"]) else 0.0
-        raw_nis = float(row["תמורה בשקלים"]) if pd.notna(row["תמורה בשקלים"]) else None
+        qty_raw = parse_num(row["כמות"])
+        price_raw = parse_num(row["שער ביצוע"])
+        fee_raw = parse_num(row["עמלת פעולה"])
+        raw_nis = parse_num(row["תמורה בשקלים"])
+
+        qty = abs(qty_raw) if qty_raw is not None else 0.0
+        exec_price = abs(price_raw) if price_raw is not None else 0.0
+        fee = abs(fee_raw) if fee_raw is not None else 0.0
         db_fund_id = fid if fid in funds_dict else None
 
         if name == "מס ששולם":
@@ -173,16 +190,16 @@ def main():
     prices = pd.read_csv(prices_file)
     price_records = []
     for _, row in prices.iterrows():
-        if pd.isna(row["מחיר"]):
+        p_val = parse_num(row["מחיר"])
+        if p_val is None or p_val <= 0:
+            continue
+        if pd.isna(row["סימבול"]):
             continue
         fid = str(row["סימבול"]).replace(".0", "").strip()
         if fid not in funds_dict:
             continue
         p_date = parse_date_iso(row["תאריך"])
         if not p_date or p_date >= "2027-01-01":
-            continue
-        p_val = float(row["מחיר"])
-        if p_val <= 0:
             continue
         price_records.append({
             "fund_id": fid,
